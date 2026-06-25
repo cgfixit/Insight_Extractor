@@ -1,4 +1,5 @@
 """insight_extractor -- BERT + regex insight extractor with dynamic keyword stemmer."""
+
 from __future__ import annotations
 
 __version__ = "2.0.0"
@@ -32,6 +33,7 @@ _IMPORT_MAP: dict[str, str] = {
 def __getattr__(name: str) -> object:
     if name in _IMPORT_MAP:
         import importlib
+
         module = importlib.import_module(_IMPORT_MAP[name])
         return getattr(module, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

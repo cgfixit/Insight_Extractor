@@ -1,13 +1,11 @@
 """Tests for DynamicKeywordStemmer and KeywordPatternRegistry."""
+
 from __future__ import annotations
 
 import re
 
-import pytest
-
 from insight_extractor.config import StemMode
 from insight_extractor.stemmer import DynamicKeywordStemmer, KeywordPatternRegistry
-
 
 # ── DynamicKeywordStemmer tests ──────────────────────────────────────────────
 
@@ -73,7 +71,7 @@ class TestGenerateStemVariations:
         vars_ = stemmer.generate_stem_variations("attack")
         assert "attack" in vars_
         # Should include common suffix forms
-        assert any("attacks" == v.lower() for v in vars_) or len(vars_) > 1
+        assert any(v.lower() == "attacks" for v in vars_) or len(vars_) > 1
 
 
 class TestCompileKeywords:
@@ -113,7 +111,7 @@ class TestCompileTypedPatterns:
         typed = stemmer.compile_typed_patterns(kws)
         assert "malware" in typed
         assert "vulnerability" in typed
-        for cat, pat in typed.items():
+        for _cat, pat in typed.items():
             assert isinstance(pat, re.Pattern)
 
 
@@ -209,9 +207,7 @@ class TestRegistry:
     def test_registry_init_defaults(self, registry: KeywordPatternRegistry) -> None:
         assert registry.all_patterns is not None
 
-    def test_registry_with_stemmer(
-        self, registry_with_stemmer: KeywordPatternRegistry
-    ) -> None:
+    def test_registry_with_stemmer(self, registry_with_stemmer: KeywordPatternRegistry) -> None:
         assert registry_with_stemmer.all_patterns is not None
 
     def test_extract_all(self, registry_with_stemmer: KeywordPatternRegistry) -> None:
@@ -219,10 +215,12 @@ class TestRegistry:
         results = registry_with_stemmer.extract_all(text)
         # extract_all returns a dict of match lists
         assert isinstance(results, dict)
-        matched_keywords = {
-            m["keyword"] for matches in results.values() for m in matches
-        }
-        assert "ransomware" in matched_keywords or "CVE" in matched_keywords or "exploit" in matched_keywords
+        matched_keywords = {m["keyword"] for matches in results.values() for m in matches}
+        assert (
+            "ransomware" in matched_keywords
+            or "CVE" in matched_keywords
+            or "exploit" in matched_keywords
+        )
 
     def test_regenerate_dynamic_patterns(
         self, registry: KeywordPatternRegistry, sample_keywords: list[str]

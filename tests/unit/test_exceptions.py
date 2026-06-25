@@ -1,7 +1,6 @@
 """Tests for the exception hierarchy."""
-from __future__ import annotations
 
-import pytest
+from __future__ import annotations
 
 from insight_extractor.exceptions import (
     ConfigLoadError,

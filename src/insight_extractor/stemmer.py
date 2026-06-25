@@ -4,8 +4,7 @@ import logging
 import re
 import warnings
 from collections import defaultdict
-from datetime import datetime, timezone
-from functools import lru_cache
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from insight_extractor.config import PatternLabel, StemMode
@@ -13,7 +12,7 @@ from insight_extractor.exceptions import PatternCompileError
 from insight_extractor.models import MatchInfo
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    pass
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -232,9 +231,7 @@ class DynamicKeywordStemmer:
         try:
             return re.compile(combined, flags)
         except re.error as exc:
-            raise PatternCompileError(
-                f"Failed to compile combined pattern: {exc}"
-            ) from exc
+            raise PatternCompileError(f"Failed to compile combined pattern: {exc}") from exc
 
     def compile_typed_patterns(self, keywords: list[str]) -> TypedPatternDict:
         """Compile keywords into categorized patterns by type heuristic.
@@ -262,11 +259,7 @@ class DynamicKeywordStemmer:
                 continue
 
             # Heuristic: uppercase / mixed-case short tokens are likely proper nouns
-            if (
-                kw_stripped.isupper()
-                and len(kw_stripped) <= 6
-                and " " not in kw_stripped
-            ):
+            if kw_stripped.isupper() and len(kw_stripped) <= 6 and " " not in kw_stripped:
                 proper_nouns.append(kw_stripped)
             # Heuristic: contains digits, special chars, or is camelCase/PascalCase
             elif (
@@ -329,7 +322,7 @@ class DynamicKeywordStemmer:
         """Clear compiled pattern caches after keyword mutations."""
         self._compiled_master = None
         self._compiled_typed = None
-        self._last_updated = datetime.now(timezone.utc)
+        self._last_updated = datetime.now(UTC)
 
     # -- Lazy compiled pattern ------------------------------------------------
 
@@ -375,8 +368,7 @@ class DynamicKeywordStemmer:
             matched_text = match.group(0)
             source_keyword = self._resolve_source_keyword(matched_text)
             is_stemmed = (
-                source_keyword is not None
-                and matched_text.lower() != source_keyword.lower()
+                source_keyword is not None and matched_text.lower() != source_keyword.lower()
             )
 
             results.append(

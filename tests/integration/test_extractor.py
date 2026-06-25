@@ -1,4 +1,5 @@
 """Integration tests for InsightExtractor with mocked ML dependencies."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,7 +11,6 @@ import pytest
 from insight_extractor.extractor import InsightExtractor
 from insight_extractor.models import ExtractResult, KeywordStats
 
-
 # ── Fixtures ─────────────────────────────────────────────────────────────────
 
 
@@ -18,9 +18,7 @@ from insight_extractor.models import ExtractResult, KeywordStats
 def mock_model() -> MagicMock:
     """Return a mock SentenceTransformer-like model."""
     mock = MagicMock()
-    mock.encode = MagicMock(
-        return_value=np.random.rand(10, 384).astype(np.float32)
-    )
+    mock.encode = MagicMock(return_value=np.random.rand(10, 384).astype(np.float32))
     return mock
 
 
@@ -31,16 +29,12 @@ def mock_tokenizer() -> MagicMock:
     mock.encode = MagicMock(
         side_effect=lambda text, **kw: list(range(max(1, len(text.split()) * 2)))
     )
-    mock.decode = MagicMock(
-        side_effect=lambda tokens, **kw: " ".join(["word"] * len(tokens))
-    )
+    mock.decode = MagicMock(side_effect=lambda tokens, **kw: " ".join(["word"] * len(tokens)))
     return mock
 
 
 @pytest.fixture
-def extractor(
-    mock_model: MagicMock, mock_tokenizer: MagicMock
-) -> InsightExtractor:
+def extractor(mock_model: MagicMock, mock_tokenizer: MagicMock) -> InsightExtractor:
     """Return an InsightExtractor with mocked heavy dependencies."""
     with (
         patch(
@@ -65,9 +59,7 @@ def extractor(
 
 
 @pytest.fixture
-def extractor_no_dynamic(
-    mock_model: MagicMock, mock_tokenizer: MagicMock
-) -> InsightExtractor:
+def extractor_no_dynamic(mock_model: MagicMock, mock_tokenizer: MagicMock) -> InsightExtractor:
     """Return an extractor with dynamic/semantic features disabled."""
     with (
         patch(
@@ -112,15 +104,13 @@ class TestExtract:
         # Should still have keyword stats and regex matches
         assert isinstance(result.keyword_stats, list)
 
-    def test_keyword_expansion(
-        self, extractor: InsightExtractor, sample_text: str
-    ) -> None:
+    def test_keyword_expansion(self, extractor: InsightExtractor, sample_text: str) -> None:
         """After extraction, new keywords may be tracked."""
         extractor.extract(sample_text)
         top = extractor.top_keywords(n=20)
         assert isinstance(top, list)
         # At least the seed keywords should be known
-        assert any("ransomware" == kw or "CVE" == kw for kw in top)
+        assert any(kw == "ransomware" or kw == "CVE" for kw in top)
 
 
 class TestPersistence:
@@ -185,9 +175,7 @@ class TestMarkdownOutput:
 class TestTopKeywords:
     """Frequency tracking."""
 
-    def test_top_keywords(
-        self, extractor: InsightExtractor, sample_text: str
-    ) -> None:
+    def test_top_keywords(self, extractor: InsightExtractor, sample_text: str) -> None:
         extractor.extract(sample_text)
         top = extractor.top_keywords(n=3)
         assert len(top) <= 3
@@ -204,9 +192,7 @@ class TestTopKeywords:
 class TestKeywordStats:
     """KeywordStats retrieval."""
 
-    def test_get_keyword_stats(
-        self, extractor: InsightExtractor, sample_text: str
-    ) -> None:
+    def test_get_keyword_stats(self, extractor: InsightExtractor, sample_text: str) -> None:
         result = extractor.extract(sample_text)
         for stat in result.keyword_stats:
             assert isinstance(stat, KeywordStats)

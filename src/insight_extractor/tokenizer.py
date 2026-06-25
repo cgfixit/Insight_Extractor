@@ -1,4 +1,5 @@
 """Sentence tokenization using HuggingFace AutoTokenizer."""
+
 from __future__ import annotations
 
 import logging
@@ -23,6 +24,7 @@ class SentenceTokenizer:
         """Lazy-load the AutoTokenizer on first access."""
         if self._tokenizer is None:
             from transformers import AutoTokenizer
+
             self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         return self._tokenizer
 
@@ -57,11 +59,7 @@ class SentenceTokenizer:
         is within the max_tokens budget by chunking oversized sentences.
         """
         # Split on sentence boundaries
-        raw_sentences = [
-            s.strip()
-            for s in re.split(r"(?<=[.!?])\s+", text)
-            if s.strip()
-        ]
+        raw_sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
         if not raw_sentences:
             return [text] if text.strip() else []
 

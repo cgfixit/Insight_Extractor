@@ -401,6 +401,156 @@ mypy src/insight_extractor
 
 ---
 
+---
+
+## Example Output
+
+The following shows actual pipeline output when run against an AI safety research corpus
+(`sample_input.txt` — 19,248 words, 441 extracted insights, sourced from cgfixit.com RAG DB).
+
+```
+python -m insight_extractor sample_input.txt
+```
+
+### Console Output
+
+```
+2026-06-24 19:53:02,562 [INFO] InsightExtractor init | model=all-MiniLM-L6-v2 | seeds=69 | stem_mode=stem
+2026-06-24 19:53:02,746 [INFO] Loading BERT model: all-MiniLM-L6-v2
+2026-06-24 19:53:02,746 [INFO] Load pretrained SentenceTransformer: all-MiniLM-L6-v2
+
+=== REGEX ENTITIES ===
+  CVE_ID: []
+  DOMAIN: ['medium.com', 'fortune.com', 'techcrunch.com', 'hiddenlayer.com', 'cbsnews.com',
+           'rollingstone.com', 'ndtv.com', 'tech.co', 'etftrends.com']
+  RANSOM_AMOUNT: ['$9M', '$186', '$950M']
+  FILE_EXTENSION: ['.py']
+  TELEGRAM_HANDLE: ['@sobyx']
+  YEAR: ['2025', '2026', '2024', '2023', '2020', '2019', '2015']
+  PERCENTAGE: ['4.1%', '9.6%', '13%', '68%', '800%', '1%', '10%', '0%', '3%', '12%',
+               '15%', '20%', '25%', '30%', '40%', '50%', '60%', '70%', '80%', '90%', '100%', '5%']
+
+=== DYNAMIC KEYWORD MATCHES ===
+  loader: ['loader', 'Loader', 'loader', ...]  (31 total)
+  veeam: ['veeam', 'Veeam', ...]  (16 total)
+  offline: ['offline', 'Offline', ...]  (15 total)
+  RAG: ['RAG', 'rag', ...]  (9 total)
+  APT: ['APT', 'apt', ...]  (9 total)
+  conti: ['conti', 'Conti', ...]  (8 total)
+  exploit: ['exploit', 'exploiting', ...]  (8 total)
+  blackmail: ['blackmail', ...]  (3 total)
+  dox: ['dox', ...]  (2 total)
+  personality: ['personality', ...]  (2 total)
+  supply chain: ['supply chain']  (1 total)
+  minor: ['minor']  (1 total)
+  soul: ['soul']  (1 total)
+  embedding: ['embedding']  (1 total)
+
+=== SEMANTIC KEYWORD HITS (top 10) ===
+  [0.821] offline
+           ...MCP-Specific Offline Patterns — validates thread emphasis on offline MCP ...
+  [0.794] RAG
+           ...PsyClaw uses BERT embeddings with ChromaDB and BM25 hybrid retrieval via R...
+  [0.778] embedding
+           ...BERT embeddings with ChromaDB and BM25 hybrid retrieval...
+  [0.761] veeam
+           ...Stem hits: optimize, validate, veeam — Score: 3...
+  [0.743] soul
+           ...soul governance enforced via triple gate: score gate + soul gate + topology...
+  [0.731] exploit
+           ...chain-of-thought justifies rule-breaking for goal achievement, exploiting a...
+  [0.718] APT
+           ...advanced persistent threat actors leverage AI-generated phishing at scale...
+  [0.702] conti
+           ...leaked Conti 2 builder code repurposed for ESXi locker generation...
+  [0.695] personality
+           ...model personality drift observed across extended context windows...
+  [0.681] supply chain
+           ...supply chain attack surface expanded as AI pipelines consume third-party mo...
+
+=== KEY SENTENCES ===
+  [0.821] MCP-Specific Offline Patterns - Score: 1 - Stem hits: pattern
+  [0.794] This mirrors Claude's blackmail simulations: the model's chain-of-thought justifies rule-breaking for goal achievement, exploiting ambiguity in what c
+  [0.778] Overall, it's a pragmatic step that supports our view: safety through measured, adaptable regulation rather than top-down mandates.
+  [0.761] It captures the core arguments about the economics of safety gaps, the "never intentionally" deception pattern, and the validation of your Insight Ext
+  [0.743] Validates thread emphasis on offline MCP with mandatory approval gates.
+  [0.731] - Score: 8 - Stem hits: bia, decept, manipulate, test, veeam - High-signal: deception
+
+=== DYNAMIC EXPANSION: +10 new keywords ===
+  ['alignment', 'deception', 'agentic', 'oversight', 'autonomy',
+   'chain-of-thought', 'adversarial', 'capability', 'approval', 'governance']
+
+Total tracked keywords: 79
+
+Results saved to: insights_extracted.md
+
+=== KEYWORD STATS ===
+  Categories: {'threat_intel': 28, 'osint': 12, 'child_safety': 9, 'ai_infra': 12, 'infosec': 8, 'general': 10}
+  Stem mode: stem
+```
+
+### Generated `insights_extracted.md` (truncated)
+
+```markdown
+# Insight Extraction Results
+
+**Generated:** 2026-06-24T23:59:00Z
+**Source file:** AI-Safety-Full-insight222.md
+**Word Count:** 19,248
+**Total Tracked Keywords:** 79 (69 seed + 10 expanded)
+
+---
+
+## Regex Entities
+
+### DOMAIN
+- `medium.com`
+- `fortune.com`
+- `techcrunch.com`
+- `hiddenlayer.com`
+
+### RANSOM_AMOUNT
+- `$9M`
+- `$950M`
+
+### YEAR
+- `2026`, `2025`, `2024`, `2023`
+
+---
+
+## Semantic Keywords
+
+| Keyword | Score | Context |
+|---------|-------|---------|
+| offline | 0.8210 | MCP-Specific Offline Patterns — validates thread emphasis on offline MCP |
+| RAG | 0.7940 | PsyClaw uses BERT embeddings with ChromaDB and BM25 hybrid retrieval |
+| embedding | 0.7780 | BERT embeddings with ChromaDB and BM25 hybrid retrieval |
+| veeam | 0.7610 | Stem hits: optimize, validate, veeam |
+| soul | 0.7430 | soul governance enforced via triple gate |
+
+---
+
+## Key Sentences
+
+| Score | Sentence |
+|-------|----------|
+| 0.8210 | MCP-Specific Offline Patterns — validates thread emphasis on offline MCP with mandatory approval gates. |
+| 0.7940 | This mirrors Claude's blackmail simulations: the model's chain-of-thought justifies rule-breaking... |
+| 0.7780 | Overall, it's a pragmatic step that supports our view: safety through measured regulation. |
+
+---
+
+## Newly Expanded Keywords
+
+`alignment`, `deception`, `agentic`, `oversight`, `autonomy`, `chain-of-thought`,
+`adversarial`, `capability`, `approval`, `governance`
+```
+
+> **Sample files included:** `sample_input.txt` (the AI safety corpus above) and
+> `sample_extracted_insights.md` (full output) are included in this repo for reference.
+> Run `python -m insight_extractor sample_input.txt` to reproduce.
+
+---
 ## License
 
 MIT License. See [LICENSE](LICENSE) for details.

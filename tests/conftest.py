@@ -1,11 +1,11 @@
 """pytest fixtures for insight_extractor."""
+
 from __future__ import annotations
 
 import json
 import tempfile
 from collections.abc import Generator
 from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -13,8 +13,8 @@ from insight_extractor.config import StemMode
 from insight_extractor.stemmer import DynamicKeywordStemmer, KeywordPatternRegistry
 from insight_extractor.tokenizer import SentenceTokenizer
 
-
 # ── Sample data fixtures ─────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def sample_text() -> str:
@@ -37,6 +37,7 @@ def sample_keywords() -> list[str]:
 
 
 # ── Component fixtures ───────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def stemmer() -> DynamicKeywordStemmer:
@@ -68,6 +69,7 @@ def tokenizer() -> SentenceTokenizer:
 
 # ── File system fixtures ─────────────────────────────────────────────────────
 
+
 @pytest.fixture
 def temp_dir() -> Generator[Path]:
     with tempfile.TemporaryDirectory() as td:
@@ -79,7 +81,7 @@ def sample_state_file(temp_dir: Path, sample_keywords: list[str]) -> Path:
     state = {
         "thread_keywords": sample_keywords,
         "keyword_freq": {"ransomware": 5, "CVE": 3},
-        "keyword_categories": {k: "threat_intel" for k in sample_keywords},
+        "keyword_categories": dict.fromkeys(sample_keywords, "threat_intel"),
         "corpus_length": 2,
         "saved_at": "2026-01-01T00:00:00Z",
     }

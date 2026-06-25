@@ -1,10 +1,10 @@
 """Utility functions for insight_extractor."""
+
 from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import UTC, datetime
 
 
 def setup_logging(level: int = logging.INFO) -> logging.Logger:
@@ -31,11 +31,12 @@ def sanitize_filename(name: str) -> str:
 def format_timestamp(dt: datetime | None = None) -> str:
     """Return ISO 8601 UTC timestamp string."""
     if dt is None:
-        dt = datetime.now(timezone.utc)
+        dt = datetime.now(UTC)
     return dt.isoformat().replace("+00:00", "Z")
 
 
 def compute_text_hash(text: str, length: int = 16) -> str:
     """Return a truncated SHA-256 hash of text."""
     import hashlib
+
     return hashlib.sha256(text.encode()).hexdigest()[:length]

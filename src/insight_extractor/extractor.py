@@ -1,4 +1,5 @@
 """Main InsightExtractor class tying together NLP/ML extraction pipelines."""
+
 from __future__ import annotations
 
 import json
@@ -6,7 +7,7 @@ import logging
 import re
 import warnings
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -26,7 +27,7 @@ from insight_extractor.models import (
 )
 from insight_extractor.stemmer import DynamicKeywordStemmer, KeywordPatternRegistry
 from insight_extractor.tokenizer import SentenceTokenizer
-from insight_extractor.utils import compute_text_hash, format_timestamp, setup_logging
+from insight_extractor.utils import compute_text_hash, format_timestamp
 
 logger = logging.getLogger("insight_extractor")
 
@@ -34,101 +35,321 @@ logger = logging.getLogger("insight_extractor")
 # Heuristic keyword buckets for auto-categorisation
 # ---------------------------------------------------------------------------
 threat_terms: set[str] = {
-    "ransomware", "malware", "trojan", "worm", "backdoor", "rootkit",
-    "spyware", "adware", "keylogger", "botnet", "ddos", "phishing",
-    "spearphishing", "whaling", "vishing", "smishing", "exploit",
-    "0day", "zero-day", "cve", "payload", "stager", "dropper",
-    "crypter", "packer", "binder", "downloader", "rat", "c2",
-    "command and control", "apt", "advanced persistent threat",
-    "lateral movement", "privilege escalation", "persistence",
-    "defense evasion", "credential dumping", "brute force",
-    "password spraying", "pass-the-hash", "pass-the-ticket",
-    "golden ticket", "kerberoasting", "living off the land",
-    "fileless malware", "supply chain attack", "watering hole",
-    "drive-by download", "man-in-the-middle", "session hijacking",
-    "sql injection", "xss", "cross-site scripting", "csrf",
-    "remote code execution", "rce", "arbitrary code execution",
-    "buffer overflow", "stack overflow", "heap overflow",
-    "use-after-free", "race condition", "format string",
-    "integer overflow", "type confusion", "deserialization",
-    "xml external entity", "xxe", "server-side request forgery",
-    "ssrf", "insecure direct object reference", "idor",
-    "security misconfiguration", "sensitive data exposure",
-    "insufficient logging", "denial of service", "dos",
-    "distributed denial of service", "cryptojacking",
-    "ransomware-as-a-service", "raas", "malware-as-a-service",
-    "phishing-as-a-service", "c2-as-a-service",
-    "blackmatter", "darkside", "revil", "sodinokibi",
-    "conti", "lockbit", "blackcat", "alphv", "clop",
-    "maze", "egregor", "sekhmet", "netwalker", "avaddon",
-    "babuk", "hive", "hello kitty", "quantum", "royal",
-    "black busta", "play", "medusa", "akira", "inc ransom",
+    "ransomware",
+    "malware",
+    "trojan",
+    "worm",
+    "backdoor",
+    "rootkit",
+    "spyware",
+    "adware",
+    "keylogger",
+    "botnet",
+    "ddos",
+    "phishing",
+    "spearphishing",
+    "whaling",
+    "vishing",
+    "smishing",
+    "exploit",
+    "0day",
+    "zero-day",
+    "cve",
+    "payload",
+    "stager",
+    "dropper",
+    "crypter",
+    "packer",
+    "binder",
+    "downloader",
+    "rat",
+    "c2",
+    "command and control",
+    "apt",
+    "advanced persistent threat",
+    "lateral movement",
+    "privilege escalation",
+    "persistence",
+    "defense evasion",
+    "credential dumping",
+    "brute force",
+    "password spraying",
+    "pass-the-hash",
+    "pass-the-ticket",
+    "golden ticket",
+    "kerberoasting",
+    "living off the land",
+    "fileless malware",
+    "supply chain attack",
+    "watering hole",
+    "drive-by download",
+    "man-in-the-middle",
+    "session hijacking",
+    "sql injection",
+    "xss",
+    "cross-site scripting",
+    "csrf",
+    "remote code execution",
+    "rce",
+    "arbitrary code execution",
+    "buffer overflow",
+    "stack overflow",
+    "heap overflow",
+    "use-after-free",
+    "race condition",
+    "format string",
+    "integer overflow",
+    "type confusion",
+    "deserialization",
+    "xml external entity",
+    "xxe",
+    "server-side request forgery",
+    "ssrf",
+    "insecure direct object reference",
+    "idor",
+    "security misconfiguration",
+    "sensitive data exposure",
+    "insufficient logging",
+    "denial of service",
+    "dos",
+    "distributed denial of service",
+    "cryptojacking",
+    "ransomware-as-a-service",
+    "raas",
+    "malware-as-a-service",
+    "phishing-as-a-service",
+    "c2-as-a-service",
+    "blackmatter",
+    "darkside",
+    "revil",
+    "sodinokibi",
+    "conti",
+    "lockbit",
+    "blackcat",
+    "alphv",
+    "clop",
+    "maze",
+    "egregor",
+    "sekhmet",
+    "netwalker",
+    "avaddon",
+    "babuk",
+    "hive",
+    "hello kitty",
+    "quantum",
+    "royal",
+    "black busta",
+    "play",
+    "medusa",
+    "akira",
+    "inc ransom",
     "nitrogen",
 }
 
 osint_terms: set[str] = {
-    "osint", "open source intelligence", "socmint", "geoint",
-    "humint", "sigint", "imint", "masint", "fisint",
-    "reconnaissance", "recon", "footprinting", "scanning",
-    "enumeration", "information gathering", "data mining",
-    "web scraping", "social engineering", "pretexting",
-    "impersonation", "doxing", "dox", "swatting",
-    "breach", "data breach", "leak", "dump", "database dump",
-    "pastebin", "github recon", "subdomain enumeration",
-    "dns enumeration", "reverse dns", "whois lookup",
-    "shodan", "censys", "binaryedge", "onyphe", "fofa",
-    "theharvester", "maltego", "spiderfoot", "recon-ng",
-    "theharvester", "sherlock", "holehe", "ghunt", "tweepy",
-    "wayback machine", "archive.org", "google dork",
-    "google dorking", "site:", "inurl:", "intitle:",
-    "filetype:", "cache:", "linkedin scraping",
-    "email harvesting", "phone lookup", "skip tracing",
-    "license plate lookup", "vin lookup", "ssn",
-    "social security number", "pii", "personally identifiable",
-    "public records", "court records", "property records",
+    "osint",
+    "open source intelligence",
+    "socmint",
+    "geoint",
+    "humint",
+    "sigint",
+    "imint",
+    "masint",
+    "fisint",
+    "reconnaissance",
+    "recon",
+    "footprinting",
+    "scanning",
+    "enumeration",
+    "information gathering",
+    "data mining",
+    "web scraping",
+    "social engineering",
+    "pretexting",
+    "impersonation",
+    "doxing",
+    "dox",
+    "swatting",
+    "breach",
+    "data breach",
+    "leak",
+    "dump",
+    "database dump",
+    "pastebin",
+    "github recon",
+    "subdomain enumeration",
+    "dns enumeration",
+    "reverse dns",
+    "whois lookup",
+    "shodan",
+    "censys",
+    "binaryedge",
+    "onyphe",
+    "fofa",
+    "theharvester",
+    "maltego",
+    "spiderfoot",
+    "recon-ng",
+    "sherlock",
+    "holehe",
+    "ghunt",
+    "tweepy",
+    "wayback machine",
+    "archive.org",
+    "google dork",
+    "google dorking",
+    "site:",
+    "inurl:",
+    "intitle:",
+    "filetype:",
+    "cache:",
+    "linkedin scraping",
+    "email harvesting",
+    "phone lookup",
+    "skip tracing",
+    "license plate lookup",
+    "vin lookup",
+    "ssn",
+    "social security number",
+    "pii",
+    "personally identifiable",
+    "public records",
+    "court records",
+    "property records",
 }
 
 safety_terms: set[str] = {
-    "safety", "alignment", "jailbreak", "prompt injection",
-    "adversarial prompt", "model extraction", "membership inference",
-    "data poisoning", "model poisoning", "backdoor attack",
-    "evasion attack", "gradient attack", "privacy",
-    "fairness", "bias", "transparency", "explainability",
-    "robustness", "hallucination", "toxicity", "red teaming",
-    "blue teaming", "purple teaming", "penetration testing",
-    "vulnerability assessment", "risk assessment",
-    "incident response", "forensics", "threat hunting",
-    "threat intelligence", "threat feed", "ioc",
-    "indicator of compromise", "ttp", "tactics techniques procedures",
-    "mitre att&ck", "kill chain", "cyber kill chain",
-    "diamond model", "pyramid of pain", "alert fatigue",
-    "false positive", "false negative", "mean time to detect",
-    "mean time to respond", "sla", "runbook", "playbook",
-    "soar", "siem", "edr", "xdr", "ndr", "mdr",
-    "endpoint detection", "network detection", " deception",
-    "honeypot", "honeytoken", "canary token",
+    "safety",
+    "alignment",
+    "jailbreak",
+    "prompt injection",
+    "adversarial prompt",
+    "model extraction",
+    "membership inference",
+    "data poisoning",
+    "model poisoning",
+    "backdoor attack",
+    "evasion attack",
+    "gradient attack",
+    "privacy",
+    "fairness",
+    "bias",
+    "transparency",
+    "explainability",
+    "robustness",
+    "hallucination",
+    "toxicity",
+    "red teaming",
+    "blue teaming",
+    "purple teaming",
+    "penetration testing",
+    "vulnerability assessment",
+    "risk assessment",
+    "incident response",
+    "forensics",
+    "threat hunting",
+    "threat intelligence",
+    "threat feed",
+    "ioc",
+    "indicator of compromise",
+    "ttp",
+    "tactics techniques procedures",
+    "mitre att&ck",
+    "kill chain",
+    "cyber kill chain",
+    "diamond model",
+    "pyramid of pain",
+    "alert fatigue",
+    "false positive",
+    "false negative",
+    "mean time to detect",
+    "mean time to respond",
+    "sla",
+    "runbook",
+    "playbook",
+    "soar",
+    "siem",
+    "edr",
+    "xdr",
+    "ndr",
+    "mdr",
+    "endpoint detection",
+    "network detection",
+    " deception",
+    "honeypot",
+    "honeytoken",
+    "canary token",
 }
 
 ai_terms: set[str] = {
-    "ai", "artificial intelligence", "machine learning", "ml",
-    "deep learning", "neural network", "transformer",
-    "attention mechanism", "bert", "gpt", "llm",
-    "large language model", "foundation model", "generative ai",
-    "genai", "diffusion model", "gan", "generative adversarial",
-    "reinforcement learning", "rl", "rlhf",
+    "ai",
+    "artificial intelligence",
+    "machine learning",
+    "ml",
+    "deep learning",
+    "neural network",
+    "transformer",
+    "attention mechanism",
+    "bert",
+    "gpt",
+    "llm",
+    "large language model",
+    "foundation model",
+    "generative ai",
+    "genai",
+    "diffusion model",
+    "gan",
+    "generative adversarial",
+    "reinforcement learning",
+    "rl",
+    "rlhf",
     "reinforcement learning from human feedback",
-    "fine-tuning", "peft", "lora", "qlora",
-    "prompt engineering", "chain of thought", "cot",
-    "tree of thoughts", "rag", "retrieval augmented generation",
-    "vector database", "embedding", "semantic search",
-    "clustering", "classification", "named entity recognition",
-    "ner", "sentiment analysis", "topic modelling",
-    "dimensionality reduction", "pca", "tsne", "umap",
-    "tensorflow", "pytorch", "jax", "onnx", "huggingface",
-    "langchain", "llamaindex", "chromadb", "pinecone",
-    "weaviate", "milvus", "qdrant", "faiss", "annoy",
-    "openai", "anthropic", "google gemini", "claude",
-    "llama", "mistral", "mixtral", "falcon", "phi",
+    "fine-tuning",
+    "peft",
+    "lora",
+    "qlora",
+    "prompt engineering",
+    "chain of thought",
+    "cot",
+    "tree of thoughts",
+    "rag",
+    "retrieval augmented generation",
+    "vector database",
+    "embedding",
+    "semantic search",
+    "clustering",
+    "classification",
+    "named entity recognition",
+    "ner",
+    "sentiment analysis",
+    "topic modelling",
+    "dimensionality reduction",
+    "pca",
+    "tsne",
+    "umap",
+    "tensorflow",
+    "pytorch",
+    "jax",
+    "onnx",
+    "huggingface",
+    "langchain",
+    "llamaindex",
+    "chromadb",
+    "pinecone",
+    "weaviate",
+    "milvus",
+    "qdrant",
+    "faiss",
+    "annoy",
+    "openai",
+    "anthropic",
+    "google gemini",
+    "claude",
+    "llama",
+    "mistral",
+    "mixtral",
+    "falcon",
+    "phi",
 }
 
 
@@ -223,17 +444,19 @@ class InsightExtractor:
             case ".toml":
                 try:
                     import tomllib
+
                     with p.open("rb") as fh:
                         return tomllib.load(fh)
                 except ImportError:
                     raise ConfigLoadError(
                         f"tomllib not available (Python 3.11+ required) for {p}"
-                    )
+                    ) from None
                 except Exception as exc:
-                    raise ConfigLoadError(f"Failed to load TOML config {p}: {exc}")
+                    raise ConfigLoadError(f"Failed to load TOML config {p}: {exc}") from exc
             case ".yaml" | ".yml":
                 try:
                     import yaml
+
                     with p.open(encoding="utf-8") as fh:
                         data = yaml.safe_load(fh)
                         if isinstance(data, dict):
@@ -242,9 +465,9 @@ class InsightExtractor:
                 except ImportError:
                     raise ConfigLoadError(
                         f"PyYAML not installed; cannot load YAML config {p}"
-                    )
+                    ) from None
                 except Exception as exc:
-                    raise ConfigLoadError(f"Failed to load YAML config {p}: {exc}")
+                    raise ConfigLoadError(f"Failed to load YAML config {p}: {exc}") from exc
             case ".json":
                 try:
                     with p.open(encoding="utf-8") as fh:
@@ -253,7 +476,7 @@ class InsightExtractor:
                             return data
                         raise ConfigLoadError(f"JSON config {p} did not parse to a dict")
                 except Exception as exc:
-                    raise ConfigLoadError(f"Failed to load JSON config {p}: {exc}")
+                    raise ConfigLoadError(f"Failed to load JSON config {p}: {exc}") from exc
             case _:
                 raise ConfigLoadError(
                     f"Unsupported config format '{p.suffix}' for {p}; "
@@ -272,7 +495,7 @@ class InsightExtractor:
             except Exception as exc:
                 raise ModelLoadError(
                     f"Failed to load SentenceTransformer model '{self.model_name}': {exc}"
-                )
+                ) from exc
         return self._model
 
     @property
@@ -416,7 +639,7 @@ class InsightExtractor:
         max_sims = similarities.max(axis=1)
 
         newly_added = []
-        for cand, sim in zip(candidates, max_sims):
+        for cand, sim in zip(candidates, max_sims, strict=False):
             if sim >= self.similarity_threshold and cand not in self.thread_keywords:
                 self.thread_keywords.append(cand)
                 self.keyword_freq[cand] += 1
@@ -442,7 +665,13 @@ class InsightExtractor:
             seen: set[str] = set()
             unique: list[str] = []
             for m in matches:
-                m_str = m.strip() if isinstance(m, str) else m[0].strip() if isinstance(m, tuple) and m else str(m)
+                m_str = (
+                    m.strip()
+                    if isinstance(m, str)
+                    else m[0].strip()
+                    if isinstance(m, tuple) and m
+                    else str(m)
+                )
                 if m_str and m_str not in seen:
                     seen.add(m_str)
                     unique.append(m_str)
@@ -528,9 +757,7 @@ class InsightExtractor:
             return []
 
         raw_sentences = [
-            s.strip()
-            for s in re.split(r"(?<=[.!?])\s+", text)
-            if s.strip() and len(s.strip()) > 30
+            s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip() and len(s.strip()) > 30
         ]
         if not raw_sentences:
             return []
@@ -548,14 +775,12 @@ class InsightExtractor:
         max_scores = similarities.max(axis=1)
 
         scored: list[tuple[str, float]] = [
-            (sent, float(score))
-            for sent, score in zip(raw_sentences, max_scores)
+            (sent, float(score)) for sent, score in zip(raw_sentences, max_scores, strict=False)
         ]
         scored.sort(key=lambda x: x[1], reverse=True)
 
         return [
-            SentenceScore(sentence=sent, score=round(score, 6))
-            for sent, score in scored[:top_n]
+            SentenceScore(sentence=sent, score=round(score, 6)) for sent, score in scored[:top_n]
         ]
 
     # ------------------------------------------------------------------
@@ -585,13 +810,15 @@ class InsightExtractor:
                     break
 
             category = self.keyword_categories.get(keyword, KeywordCategory.GENERAL)
-            results.append({
-                "keyword": keyword,
-                "match": matched_text,
-                "start": start,
-                "end": end,
-                "category": category.value,
-            })
+            results.append(
+                {
+                    "keyword": keyword,
+                    "match": matched_text,
+                    "start": start,
+                    "end": end,
+                    "category": category.value,
+                }
+            )
 
         return results
 
@@ -614,8 +841,10 @@ class InsightExtractor:
             top_keywords=top_kw,
             stem_mode=self.stemmer.stem_mode.value,
             case_sensitive=self.stemmer.case_sensitive,
-            custom_suffixes=list(self.stemmer.custom_suffixes) if self.stemmer.custom_suffixes else [],
-            last_updated=format_timestamp(datetime.now(timezone.utc)),
+            custom_suffixes=list(self.stemmer.custom_suffixes)
+            if self.stemmer.custom_suffixes
+            else [],
+            last_updated=format_timestamp(datetime.now(UTC)),
         )
 
     # ------------------------------------------------------------------
@@ -648,7 +877,7 @@ class InsightExtractor:
         keyword_stats = self.get_keyword_stats()
 
         return ExtractResult(
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             input_hash=input_hash,
             word_count=word_count,
             regex_entities=regex_entities,
@@ -759,7 +988,11 @@ class InsightExtractor:
                 DeprecationWarning,
                 stacklevel=2,
             )
-        p = self.output_dir / path if isinstance(path, str) and not Path(path).is_absolute() else Path(path)
+        p = (
+            self.output_dir / path
+            if isinstance(path, str) and not Path(path).is_absolute()
+            else Path(path)
+        )
 
         state = {
             "thread_keywords": self.thread_keywords,
@@ -781,7 +1014,11 @@ class InsightExtractor:
                 DeprecationWarning,
                 stacklevel=2,
             )
-        p = self.output_dir / path if isinstance(path, str) and not Path(path).is_absolute() else Path(path)
+        p = (
+            self.output_dir / path
+            if isinstance(path, str) and not Path(path).is_absolute()
+            else Path(path)
+        )
 
         if not p.exists():
             logger.debug("State file not found at %s; starting fresh.", p)
@@ -790,14 +1027,12 @@ class InsightExtractor:
         try:
             raw = json.loads(p.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError) as exc:
-            raise StateLoadError(f"Failed to load state from {p}: {exc}")
+            raise StateLoadError(f"Failed to load state from {p}: {exc}") from exc
 
         self.thread_keywords = list(raw.get("thread_keywords", []))
         self.keyword_freq = Counter(raw.get("keyword_freq", {}))
         loaded_cats = raw.get("keyword_categories", {})
-        self.keyword_categories = {
-            k: KeywordCategory(v) for k, v in loaded_cats.items()
-        }
+        self.keyword_categories = {k: KeywordCategory(v) for k, v in loaded_cats.items()}
 
         # Restore settings if present
         if "stem_mode" in raw:

@@ -17,8 +17,12 @@ on:
 permissions:
   # Required to read repo contents
   contents: read
-  # Required to post PR annotations / security findings (if using SARIF upload)
+  # Required to post PR annotations and upload SARIF to Security tab.
+  # NOTE: on private repos this requires the repo to have GitHub Advanced Security
+  # enabled. If not enabled, the SARIF upload step will be skipped gracefully.
   security-events: write
+  # Required to post PR check annotations
+  actions: read
 
 jobs:
   gitleaks:
@@ -53,9 +57,11 @@ jobs:
 
       # -----------------------------------------------------------------------
       # Upload SARIF report to GitHub Security tab (if findings exist)
+      # Skipped on private repos without GitHub Advanced Security.
       # -----------------------------------------------------------------------
       - name: Upload SARIF report to GitHub Security
         if: always() && hashFiles('results.sarif') != ''
+        continue-on-error: true
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: results.sarif

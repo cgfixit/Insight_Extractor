@@ -1,4 +1,5 @@
 """CLI entry point for insight_extractor."""
+
 from __future__ import annotations
 
 import sys
@@ -59,7 +60,7 @@ def main() -> None:
     print(f"\nResults saved to: {md_path}")
 
     stats = results.keyword_stats
-    print(f"\n=== KEYWORD STATS ===")
+    print("\n=== KEYWORD STATS ===")
     print(f"  Categories: {stats.category_counts}")
     print(f"  Stem mode: {stats.stem_mode}")
 

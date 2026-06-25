@@ -1,4 +1,5 @@
 """End-to-end tests with mocked BERT and full pipeline."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,7 +11,6 @@ import pytest
 from insight_extractor.extractor import InsightExtractor
 from insight_extractor.models import ExtractResult
 
-
 # ── Fixtures ─────────────────────────────────────────────────────────────────
 
 
@@ -21,11 +21,11 @@ def mock_bert() -> MagicMock:
     # Return deterministic vectors so similarity calculations are stable
     rng = np.random.default_rng(seed=42)
     mock.encode = MagicMock(
-        side_effect=lambda texts, **kw: rng.random((len(texts), 384)).astype(
-            np.float32
+        side_effect=lambda texts, **kw: (
+            rng.random((len(texts), 384)).astype(np.float32)
+            if isinstance(texts, list)
+            else rng.random((1, 384)).astype(np.float32)
         )
-        if isinstance(texts, list)
-        else rng.random((1, 384)).astype(np.float32)
     )
     return mock
 
@@ -36,9 +36,7 @@ def mock_tokenizer() -> MagicMock:
     mock.encode = MagicMock(
         side_effect=lambda text, **kw: list(range(max(1, len(text.split()) * 2)))
     )
-    mock.decode = MagicMock(
-        side_effect=lambda tokens, **kw: " ".join(["word"] * len(tokens))
-    )
+    mock.decode = MagicMock(side_effect=lambda tokens, **kw: " ".join(["word"] * len(tokens)))
     return mock
 
 
@@ -82,9 +80,7 @@ def e2e_extractor(mock_bert: MagicMock, mock_tokenizer: MagicMock) -> InsightExt
 class TestFullPipeline:
     """Run the complete extraction pipeline end-to-end."""
 
-    def test_full_pipeline(
-        self, e2e_extractor: InsightExtractor, sample_text: str
-    ) -> None:
+    def test_full_pipeline(self, e2e_extractor: InsightExtractor, sample_text: str) -> None:
         """extract() on sample_text produces a valid ExtractResult."""
         result = e2e_extractor.extract(sample_text)
 
@@ -153,9 +149,7 @@ class TestMarkdownOutput:
         assert "##" in content
 
         # Should list at least one keyword
-        assert len(result.keywords) == 0 or any(
-            kw in content for kw in result.keywords[:3]
-        )
+        assert len(result.keywords) == 0 or any(kw in content for kw in result.keywords[:3])
 
 
 class TestStatePersistence:
@@ -187,14 +181,10 @@ class TestStatePersistence:
         )
         mock_tok = MagicMock()
         mock_tok.encode = MagicMock(
-            side_effect=lambda text, **kw: list(
-                range(max(1, len(text.split()) * 2))
-            )
+            side_effect=lambda text, **kw: list(range(max(1, len(text.split()) * 2)))
         )
         mock_tok.decode = MagicMock(
-            side_effect=lambda tokens, **kw: " ".join(
-                ["word"] * len(tokens)
-            )
+            side_effect=lambda tokens, **kw: " ".join(["word"] * len(tokens))
         )
 
         with (
