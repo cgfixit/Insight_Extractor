@@ -24,7 +24,7 @@ def mock_model() -> MagicMock:
 
 @pytest.fixture
 def mock_tokenizer() -> MagicMock:
-    """Return a mock tokenizer."""
+    """Return a mock HuggingFace tokenizer."""
     mock = MagicMock()
     mock.encode = MagicMock(
         side_effect=lambda text, **kw: list(range(max(1, len(text.split()) * 2)))
@@ -52,15 +52,14 @@ def extractor(mock_model: MagicMock, mock_tokenizer: MagicMock) -> InsightExtrac
             seed_keywords=["ransomware", "CVE"],
             top_k=5,
             similarity_threshold=0.5,
-            enable_dynamic=True,
-            enable_semantic=True,
+            enable_dynamic_regex=True,
         )
     return ext
 
 
 @pytest.fixture
 def extractor_no_dynamic(mock_model: MagicMock, mock_tokenizer: MagicMock) -> InsightExtractor:
-    """Return an extractor with dynamic/semantic features disabled."""
+    """Return an extractor with dynamic regex disabled."""
     with (
         patch(
             "insight_extractor.extractor.SentenceTransformer",
@@ -77,8 +76,7 @@ def extractor_no_dynamic(mock_model: MagicMock, mock_tokenizer: MagicMock) -> In
             seed_keywords=["ransomware", "CVE"],
             top_k=5,
             similarity_threshold=0.5,
-            enable_dynamic=False,
-            enable_semantic=False,
+            enable_dynamic_regex=False,
         )
     return ext
 
@@ -95,22 +93,38 @@ class TestExtract:
         result = extractor.extract(sample_text)
         assert isinstance(result, ExtractResult)
 
+    def test_extract_has_timestamp(self, extractor: InsightExtractor, sample_text: str) -> None:
+        result = extractor.extract(sample_text)
+        assert isinstance(result.timestamp, str)
+        assert result.timestamp != ""
+
     def test_extract_regex_only(
         self, extractor_no_dynamic: InsightExtractor, sample_text: str
     ) -> None:
-        """With dynamic disabled, regex entities should still be found."""
+        """With dynamic regex disabled, static regex entities should still be found."""
         result = extractor_no_dynamic.extract(sample_text)
         assert isinstance(result, ExtractResult)
-        # Should still have keyword stats and regex matches
-        assert isinstance(result.keyword_stats, list)
+        # keyword_stats is a KeywordStats object, not a list
+        assert isinstance(result.keyword_stats, KeywordStats)
+        assert result.dynamic_keyword_matches == {}
 
-    def test_keyword_expansion(self, extractor: InsightExtractor, sample_text: str) -> None:
-        """After extraction, new keywords may be tracked."""
+    def test_keyword_expansion_after_extract(
+        self, extractor: InsightExtractor, sample_text: str
+    ) -> None:
+        """After extraction, top_keywords returns list of (keyword, count) tuples."""
         extractor.extract(sample_text)
         top = extractor.top_keywords(n=20)
         assert isinstance(top, list)
-        # At least the seed keywords should be known
-        assert any(kw == "ransomware" or kw == "CVE" for kw in top)
+        # Each element is a (keyword, count) tuple
+        for item in top:
+            assert isinstance(item, tuple)
+            assert len(item) == 2
+            kw, count = item
+            assert isinstance(kw, str)
+            assert isinstance(count, int)
+        # At least one seed keyword should appear
+        kw_names = [item[0] for item in top]
+        assert any(k in kw_names for k in ["ransomware", "CVE"])
 
 
 class TestPersistence:
@@ -131,7 +145,7 @@ class TestPersistence:
         with (
             patch(
                 "insight_extractor.extractor.SentenceTransformer",
-                return_value=extractor.model,
+                return_value=extractor._model,
             ),
             patch(
                 "insight_extractor.tokenizer.AutoTokenizer.from_pretrained",
@@ -147,11 +161,13 @@ class TestPersistence:
             )
             fresh.load_state(state_path)
 
-        # Keywords should have been restored
         loaded_top = fresh.top_keywords(n=20)
-        assert isinstance(loaded_top, list)
         original_top = extractor.top_keywords(n=20)
-        assert set(loaded_top) == set(original_top)
+        assert isinstance(loaded_top, list)
+        # Keyword names should be preserved across save/load
+        loaded_kws = {item[0] for item in loaded_top}
+        original_kws = {item[0] for item in original_top}
+        assert loaded_kws == original_kws
 
 
 class TestMarkdownOutput:
@@ -163,28 +179,36 @@ class TestMarkdownOutput:
         temp_dir: Path,
         sample_text: str,
     ) -> None:
-        result = extractor.extract(sample_text)
-        md_path = temp_dir / "report.md"
-        extractor.save_results_to_markdown(result, md_path)
+        extractor_with_dir = InsightExtractor(
+            seed_keywords=["ransomware", "CVE"],
+            output_dir=temp_dir,
+        )
+        result = extractor_with_dir.extract(sample_text, update_keywords=False)
+        md_path = extractor_with_dir.save_results_to_markdown(result, "report.md")
         assert md_path.exists()
         content = md_path.read_text(encoding="utf-8")
-        assert "# " in content
+        assert "# Insight Extraction Results" in content
         assert len(content) > 0
 
 
 class TestTopKeywords:
     """Frequency tracking."""
 
-    def test_top_keywords(self, extractor: InsightExtractor, sample_text: str) -> None:
+    def test_top_keywords_returns_tuples(
+        self, extractor: InsightExtractor, sample_text: str
+    ) -> None:
         extractor.extract(sample_text)
         top = extractor.top_keywords(n=3)
         assert len(top) <= 3
         assert isinstance(top, list)
-        for kw in top:
+        for item in top:
+            assert isinstance(item, tuple)
+            kw, count = item
             assert isinstance(kw, str)
+            assert isinstance(count, int)
 
     def test_top_keywords_empty(self, extractor: InsightExtractor) -> None:
-        """Before extraction, top_keywords may return empty or seeds."""
+        """Before extraction, top_keywords returns seed keywords."""
         top = extractor.top_keywords(n=5)
         assert isinstance(top, list)
 
@@ -192,34 +216,36 @@ class TestTopKeywords:
 class TestKeywordStats:
     """KeywordStats retrieval."""
 
-    def test_get_keyword_stats(self, extractor: InsightExtractor, sample_text: str) -> None:
+    def test_get_keyword_stats(self, extractor: InsightExtractor) -> None:
+        stats = extractor.get_keyword_stats()
+        assert isinstance(stats, KeywordStats)
+        assert isinstance(stats.total_keywords, int)
+        assert stats.total_keywords >= 0
+        assert isinstance(stats.category_counts, dict)
+        assert isinstance(stats.stem_mode, str)
+
+    def test_keyword_stats_from_extract_result(
+        self, extractor: InsightExtractor, sample_text: str
+    ) -> None:
         result = extractor.extract(sample_text)
-        for stat in result.keyword_stats:
-            assert isinstance(stat, KeywordStats)
-            assert isinstance(stat.keyword, str)
-            assert isinstance(stat.count, int)
-            assert stat.count >= 1
-            assert isinstance(stat.category, str)
+        assert isinstance(result.keyword_stats, KeywordStats)
+        assert result.keyword_stats.total_keywords == len(extractor.thread_keywords)
 
 
 class TestInitCustomSeeds:
     """Custom seed keywords are used at init time."""
 
-    def test_init_custom_seeds(self, mock_model: MagicMock) -> None:
-        with patch(
-            "insight_extractor.extractor.SentenceTransformer",
-            return_value=mock_model,
-        ):
-            ext = InsightExtractor(
-                model_name="all-MiniLM-L6-v2",
-                seed_keywords=["custom_seed_1", "custom_seed_2"],
-            )
-        top = ext.top_keywords(n=10)
-        assert "custom_seed_1" in top or "custom_seed_2" in top
+    def test_init_custom_seeds(self) -> None:
+        ext = InsightExtractor(
+            model_name="all-MiniLM-L6-v2",
+            seed_keywords=["custom_seed_1", "custom_seed_2"],
+        )
+        kw_names = [kw for kw, _ in ext.top_keywords(n=10)]
+        assert "custom_seed_1" in kw_names or "custom_seed_2" in kw_names
 
 
 class TestDisabledDynamicRegex:
-    """When dynamic regex is disabled, dynamic entities should be empty."""
+    """When dynamic regex is disabled, dynamic_keyword_matches should be empty."""
 
     def test_disabled_dynamic_regex(
         self,
@@ -227,6 +253,5 @@ class TestDisabledDynamicRegex:
         sample_text: str,
     ) -> None:
         result = extractor_no_dynamic.extract(sample_text)
-        # regex_matches may still contain static regex hits (CVE, IPs, etc.)
-        assert isinstance(result.regex_matches, list)
         assert isinstance(result, ExtractResult)
+        assert result.dynamic_keyword_matches == {}

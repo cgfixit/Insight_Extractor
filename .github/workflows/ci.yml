@@ -107,6 +107,13 @@ jobs:
           name: coverage-xml
           path: coverage.xml
 
+      - name: Upload JUnit test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-unit-py${{ matrix.python-version }}
+          path: junit-unit-${{ matrix.python-version }}.xml
+
   # ---------------------------------------------------------------------------
   # 4. Integration / smoke test — emulates script output with a generated
   #    .txt input file (does NOT download the full BERT model; uses the

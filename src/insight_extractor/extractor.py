@@ -275,7 +275,7 @@ safety_terms: set[str] = {
     "mdr",
     "endpoint detection",
     "network detection",
-    " deception",
+    "deception",
     "honeypot",
     "honeytoken",
     "canary token",
@@ -528,40 +528,25 @@ class InsightExtractor:
     # ------------------------------------------------------------------
     def _auto_categorize_keywords(self) -> None:
         """Heuristic categorisation of keywords into KeywordCategory buckets."""
+        _buckets: list[tuple[set[str], KeywordCategory]] = [
+            (threat_terms, KeywordCategory.THREAT_INTEL),
+            (osint_terms, KeywordCategory.OSINT),
+            (safety_terms, KeywordCategory.SAFETY),
+            (ai_terms, KeywordCategory.AI_ML),
+        ]
         for kw in self.thread_keywords:
+            if kw in self.keyword_categories:
+                continue  # already classified; skip re-computation
             kw_lower = kw.lower()
-            match kw_lower:
-                case _ if kw_lower in threat_terms:
-                    self.keyword_categories[kw] = KeywordCategory.THREAT_INTEL
-                case _ if kw_lower in osint_terms:
-                    self.keyword_categories[kw] = KeywordCategory.OSINT
-                case _ if kw_lower in safety_terms:
-                    self.keyword_categories[kw] = KeywordCategory.SAFETY
-                case _ if kw_lower in ai_terms:
-                    self.keyword_categories[kw] = KeywordCategory.AI_ML
-                case _:
-                    # Check if any term contains the keyword or vice versa
-                    for term in threat_terms:
-                        if kw_lower in term or term in kw_lower:
-                            self.keyword_categories[kw] = KeywordCategory.THREAT_INTEL
-                            break
-                    else:
-                        for term in osint_terms:
-                            if kw_lower in term or term in kw_lower:
-                                self.keyword_categories[kw] = KeywordCategory.OSINT
-                                break
-                        else:
-                            for term in safety_terms:
-                                if kw_lower in term or term in kw_lower:
-                                    self.keyword_categories[kw] = KeywordCategory.SAFETY
-                                    break
-                            else:
-                                for term in ai_terms:
-                                    if kw_lower in term or term in kw_lower:
-                                        self.keyword_categories[kw] = KeywordCategory.AI_ML
-                                        break
-                                else:
-                                    self.keyword_categories[kw] = KeywordCategory.GENERAL
+            assigned = KeywordCategory.GENERAL
+            for terms, category in _buckets:
+                if kw_lower in terms:
+                    assigned = category
+                    break
+                if any(kw_lower in t or t in kw_lower for t in terms):
+                    assigned = category
+                    break
+            self.keyword_categories[kw] = assigned
 
     # ------------------------------------------------------------------
     # Dynamic keyword expansion via TF-IDF + BERT similarity
@@ -877,7 +862,7 @@ class InsightExtractor:
         keyword_stats = self.get_keyword_stats()
 
         return ExtractResult(
-            timestamp=datetime.now(UTC),
+            timestamp=format_timestamp(datetime.now(UTC)),
             input_hash=input_hash,
             word_count=word_count,
             regex_entities=regex_entities,

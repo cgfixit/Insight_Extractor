@@ -1,4 +1,4 @@
-"""Tests for Pydantic v2 data models."""
+"""Tests for Pydantic v2 data models — verifies the actual field schema."""
 
 from __future__ import annotations
 
@@ -15,57 +15,69 @@ from insight_extractor.models import (
 
 
 class TestMatchInfo:
-    """MatchInfo represents a regex/pattern match in text."""
+    """MatchInfo represents a single keyword/pattern match in text."""
 
     def test_match_info_valid(self) -> None:
         mi = MatchInfo(
+            match="ransomware",
             keyword="ransomware",
-            span=(10, 20),
-            matched_text="ransomware",
-            category="threat_actor",
+            start=10,
+            end=20,
             stemmed=False,
         )
+        assert mi.match == "ransomware"
         assert mi.keyword == "ransomware"
-        assert mi.span == (10, 20)
-        assert mi.matched_text == "ransomware"
-        assert mi.category == "threat_actor"
+        assert mi.start == 10
+        assert mi.end == 20
         assert mi.stemmed is False
+
+    def test_match_info_stemmed_flag(self) -> None:
+        mi = MatchInfo(match="ransomwares", keyword="ransomware", start=0, end=11, stemmed=True)
+        assert mi.stemmed is True
 
     def test_match_info_invalid_types(self) -> None:
-        """Passing wrong types should raise ValidationError."""
         with pytest.raises(ValidationError):
             MatchInfo(
-                keyword=123,  # type: ignore[arg-type]
-                span="not_a_tuple",  # type: ignore[arg-type]
-                matched_text="text",
+                match=123,  # type: ignore[arg-type]
+                keyword="kw",
+                start="not_int",  # type: ignore[arg-type]
+                end=5,
+                stemmed=False,
             )
-
-    def test_match_info_defaults(self) -> None:
-        """category defaults to empty string and stemmed to False."""
-        mi = MatchInfo(keyword="CVE", span=(0, 3), matched_text="CVE")
-        assert mi.category == ""
-        assert mi.stemmed is False
 
 
 class TestKeywordStats:
-    """KeywordStats aggregates frequency and category information."""
+    """KeywordStats aggregates global keyword frequency and category information."""
 
     def test_keyword_stats_valid(self) -> None:
         ks = KeywordStats(
-            keyword="ransomware",
-            count=7,
-            category="malware",
-            sources=["regex", "semantic"],
+            total_keywords=50,
+            total_categories=4,
+            category_counts={"threat_intel": 20, "osint": 10, "general": 20},
+            top_keywords=[("ransomware", 7), ("CVE", 3)],
+            stem_mode="stem",
+            case_sensitive=False,
+            custom_suffixes=("s", "ing", "ed"),
+            last_updated="2026-01-01T00:00:00Z",
         )
-        assert ks.keyword == "ransomware"
-        assert ks.count == 7
-        assert ks.category == "malware"
-        assert ks.sources == ["regex", "semantic"]
+        assert ks.total_keywords == 50
+        assert ks.total_categories == 4
+        assert ks.category_counts["threat_intel"] == 20
+        assert ("ransomware", 7) in ks.top_keywords
+        assert ks.stem_mode == "stem"
+        assert ks.case_sensitive is False
 
-    def test_keyword_stats_defaults(self) -> None:
-        ks = KeywordStats(keyword="CVE", count=2)
-        assert ks.category == ""
-        assert ks.sources == []
+    def test_keyword_stats_last_updated_optional(self) -> None:
+        ks = KeywordStats(
+            total_keywords=1,
+            total_categories=1,
+            category_counts={"general": 1},
+            top_keywords=[("x", 1)],
+            stem_mode="exact",
+            case_sensitive=True,
+            custom_suffixes=(),
+        )
+        assert ks.last_updated is None
 
 
 class TestSemanticHit:
@@ -74,22 +86,19 @@ class TestSemanticHit:
     def test_semantic_hit_valid(self) -> None:
         sh = SemanticHit(
             keyword="phishing",
-            similarity=0.9234,
-            matched_span=(5, 13),
-            source_sentence="The phishing campaign targeted finance.",
+            score=0.9234,
+            context="The phishing campaign targeted finance.",
         )
         assert sh.keyword == "phishing"
-        assert sh.similarity == pytest.approx(0.9234)
-        assert sh.matched_span == (5, 13)
+        assert sh.score == pytest.approx(0.9234)
+        assert "phishing" in sh.context
 
-    def test_semantic_hit_invalid_similarity(self) -> None:
-        """Similarity must be a float in [0, 1] (if bounded) or at least a number."""
+    def test_semantic_hit_invalid_score_type(self) -> None:
         with pytest.raises(ValidationError):
             SemanticHit(
                 keyword="x",
-                similarity="high",  # type: ignore[arg-type]
-                matched_span=(0, 1),
-                source_sentence="test",
+                score="high",  # type: ignore[arg-type]
+                context="test",
             )
 
 
@@ -100,134 +109,97 @@ class TestSentenceScore:
         ss = SentenceScore(
             sentence="The ransomware attack began at midnight.",
             score=0.87,
-            keyword_hits=["ransomware", "attack"],
         )
         assert ss.sentence == "The ransomware attack began at midnight."
         assert ss.score == pytest.approx(0.87)
-        assert ss.keyword_hits == ["ransomware", "attack"]
+
+    def test_sentence_score_invalid_score(self) -> None:
+        with pytest.raises(ValidationError):
+            SentenceScore(sentence="s", score="high")  # type: ignore[arg-type]
 
 
 class TestExtractResult:
     """ExtractResult is the top-level output of the pipeline."""
 
-    def test_extract_result_valid(self) -> None:
-        """Construct with nested models."""
-        er = ExtractResult(
-            text_hash="a1b2c3",
-            keywords=["ransomware", "CVE"],
-            keyword_stats=[
-                KeywordStats(keyword="ransomware", count=3, category="malware"),
-                KeywordStats(keyword="CVE", count=1),
-            ],
-            regex_matches=[
-                MatchInfo(
-                    keyword="ransomware",
-                    span=(4, 14),
-                    matched_text="ransomware",
-                    stemmed=True,
-                ),
-            ],
-            semantic_matches=[
-                SemanticHit(
-                    keyword="exploit",
-                    similarity=0.91,
-                    matched_span=(20, 27),
-                    source_sentence="The exploit was public.",
-                ),
-            ],
-            sentence_scores=[
-                SentenceScore(
-                    sentence="The exploit was public.",
-                    score=0.91,
-                    keyword_hits=["exploit"],
-                ),
-            ],
-            timestamp="2026-01-15T10:30:00+00:00",
+    def _make_stats(self) -> KeywordStats:
+        return KeywordStats(
+            total_keywords=2,
+            total_categories=1,
+            category_counts={"general": 2},
+            top_keywords=[("ransomware", 3)],
+            stem_mode="stem",
+            case_sensitive=False,
+            custom_suffixes=("s",),
         )
-        assert er.text_hash == "a1b2c3"
-        assert er.keywords == ["ransomware", "CVE"]
-        assert len(er.keyword_stats) == 2
-        assert len(er.regex_matches) == 1
-        assert len(er.semantic_matches) == 1
-        assert len(er.sentence_scores) == 1
+
+    def test_extract_result_valid(self) -> None:
+        er = ExtractResult(
+            timestamp="2026-01-15T10:30:00Z",
+            input_hash="a1b2c3d4",
+            word_count=42,
+            regex_entities={"CVE_ID": ["CVE-2026-1234"]},
+            dynamic_keyword_matches={"DYNAMIC_KEYWORD": ["ransomware"]},
+            semantic_keywords=[SemanticHit(keyword="exploit", score=0.91, context="exploit used")],
+            key_sentences=[SentenceScore(sentence="The exploit was public.", score=0.91)],
+            newly_expanded_keywords=["lateral movement"],
+            total_tracked_keywords=70,
+            keyword_stats=self._make_stats(),
+        )
+        assert er.input_hash == "a1b2c3d4"
+        assert er.word_count == 42
+        assert er.regex_entities["CVE_ID"] == ["CVE-2026-1234"]
+        assert er.total_tracked_keywords == 70
 
     def test_extract_result_timestamp_validation(self) -> None:
-        """A valid ISO-8601 string should be accepted."""
         er = ExtractResult(
-            text_hash="abc",
-            keywords=["k"],
             timestamp="2026-05-11T14:00:00Z",
+            input_hash="abc",
+            word_count=5,
+            regex_entities={},
+            dynamic_keyword_matches={},
+            semantic_keywords=[],
+            key_sentences=[],
+            newly_expanded_keywords=[],
+            total_tracked_keywords=0,
+            keyword_stats=self._make_stats(),
         )
         assert er.timestamp == "2026-05-11T14:00:00Z"
 
     def test_extract_result_invalid_timestamp(self) -> None:
-        """A malformed timestamp should fail Pydantic validation."""
         with pytest.raises(ValidationError):
             ExtractResult(
-                text_hash="abc",
-                keywords=["k"],
                 timestamp="not-a-real-timestamp",
+                input_hash="abc",
+                word_count=5,
+                regex_entities={},
+                dynamic_keyword_matches={},
+                semantic_keywords=[],
+                key_sentences=[],
+                newly_expanded_keywords=[],
+                total_tracked_keywords=0,
+                keyword_stats=self._make_stats(),
             )
-
-    def test_extract_result_defaults(self) -> None:
-        """Lists default to empty when omitted."""
-        er = ExtractResult(text_hash="x", keywords=["y"])
-        assert er.keyword_stats == []
-        assert er.regex_matches == []
-        assert er.semantic_matches == []
-        assert er.sentence_scores == []
 
 
 class TestModelSerialization:
-    """Round-trip serialization of all models."""
+    """Round-trip serialization."""
 
-    def test_model_serialization(self) -> None:
-        mi = MatchInfo(keyword="CVE", span=(0, 3), matched_text="CVE-2025")
+    def test_match_info_roundtrip(self) -> None:
+        mi = MatchInfo(match="CVE-2026-1234", keyword="CVE", start=0, end=13, stemmed=False)
         d = mi.model_dump()
         assert isinstance(d, dict)
         assert d["keyword"] == "CVE"
-        assert d["span"] == (0, 3)
+        assert d["start"] == 0
+        assert d["end"] == 13
 
-    def test_model_json_roundtrip(self) -> None:
-        original = KeywordStats(
-            keyword="ransomware",
-            count=5,
-            category="malware",
-            sources=["regex"],
-        )
-        json_str = original.model_dump_json()
-        restored = KeywordStats.model_validate_json(json_str)
+    def test_match_info_json_roundtrip(self) -> None:
+        original = MatchInfo(match="ransomware", keyword="ransomware", start=4, end=14, stemmed=True)
+        restored = MatchInfo.model_validate_json(original.model_dump_json())
+        assert restored.match == original.match
+        assert restored.stemmed == original.stemmed
+
+    def test_semantic_hit_json_roundtrip(self) -> None:
+        original = SemanticHit(keyword="phishing", score=0.75, context="phishing email")
+        restored = SemanticHit.model_validate_json(original.model_dump_json())
         assert restored.keyword == original.keyword
-        assert restored.count == original.count
-        assert restored.category == original.category
-        assert restored.sources == original.sources
-
-    def test_extract_result_json_roundtrip(self) -> None:
-        original = ExtractResult(
-            text_hash="deadbeef",
-            keywords=["a", "b"],
-            keyword_stats=[KeywordStats(keyword="a", count=1)],
-            regex_matches=[
-                MatchInfo(keyword="a", span=(0, 1), matched_text="a"),
-            ],
-            semantic_matches=[
-                SemanticHit(
-                    keyword="b",
-                    similarity=0.85,
-                    matched_span=(2, 3),
-                    source_sentence="ab",
-                ),
-            ],
-            sentence_scores=[
-                SentenceScore(sentence="ab", score=0.5, keyword_hits=["a"]),
-            ],
-            timestamp="2026-06-01T00:00:00+00:00",
-        )
-        json_str = original.model_dump_json()
-        restored = ExtractResult.model_validate_json(json_str)
-        assert restored.text_hash == original.text_hash
-        assert restored.keywords == original.keywords
-        assert len(restored.keyword_stats) == 1
-        assert len(restored.regex_matches) == 1
-        assert len(restored.semantic_matches) == 1
-        assert len(restored.sentence_scores) == 1
+        assert restored.score == pytest.approx(original.score)
