@@ -193,7 +193,9 @@ class TestModelSerialization:
         assert d["end"] == 13
 
     def test_match_info_json_roundtrip(self) -> None:
-        original = MatchInfo(match="ransomware", keyword="ransomware", start=4, end=14, stemmed=True)
+        original = MatchInfo(
+            match="ransomware", keyword="ransomware", start=4, end=14, stemmed=True
+        )
         restored = MatchInfo.model_validate_json(original.model_dump_json())
         assert restored.match == original.match
         assert restored.stemmed == original.stemmed
