@@ -13,8 +13,8 @@ from typing import Any
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+from sklearn.feature_extraction.text import TfidfVectorizer  # type: ignore[import-untyped]
+from sklearn.metrics.pairwise import cosine_similarity  # type: ignore[import-untyped]
 
 from insight_extractor.config import KeywordCategory, StemMode
 from insight_extractor.constants import REGEX_PATTERNS, THREAD_SEEDS
@@ -275,7 +275,7 @@ safety_terms: set[str] = {
     "mdr",
     "endpoint detection",
     "network detection",
-    " deception",
+    "deception",
     "honeypot",
     "honeytoken",
     "canary token",
@@ -407,11 +407,17 @@ class InsightExtractor:
                 logger.warning("Failed to load config; using defaults.")
 
         # ---- stemmer + pattern registry ------------------------------------
-        self.stemmer = DynamicKeywordStemmer(
-            stem_mode=self.stem_mode,
-            case_sensitive=False,
-            custom_suffixes=self.custom_stem_suffixes,
-        )
+        if self.custom_stem_suffixes is not None:
+            self.stemmer = DynamicKeywordStemmer(
+                stem_mode=self.stem_mode,
+                case_sensitive=False,
+                custom_suffixes=self.custom_stem_suffixes,
+            )
+        else:
+            self.stemmer = DynamicKeywordStemmer(
+                stem_mode=self.stem_mode,
+                case_sensitive=False,
+            )
         if self.thread_keywords:
             self.stemmer.set_keywords(self.thread_keywords)
 
@@ -455,7 +461,7 @@ class InsightExtractor:
                     raise ConfigLoadError(f"Failed to load TOML config {p}: {exc}") from exc
             case ".yaml" | ".yml":
                 try:
-                    import yaml
+                    import yaml  # type: ignore[import-untyped]
 
                     with p.open(encoding="utf-8") as fh:
                         data = yaml.safe_load(fh)
@@ -528,40 +534,25 @@ class InsightExtractor:
     # ------------------------------------------------------------------
     def _auto_categorize_keywords(self) -> None:
         """Heuristic categorisation of keywords into KeywordCategory buckets."""
+        _buckets: list[tuple[set[str], KeywordCategory]] = [
+            (threat_terms, KeywordCategory.THREAT_INTEL),
+            (osint_terms, KeywordCategory.OSINT),
+            (safety_terms, KeywordCategory.CHILD_SAFETY),
+            (ai_terms, KeywordCategory.AI_INFRA),
+        ]
         for kw in self.thread_keywords:
+            if kw in self.keyword_categories:
+                continue  # already classified; skip re-computation
             kw_lower = kw.lower()
-            match kw_lower:
-                case _ if kw_lower in threat_terms:
-                    self.keyword_categories[kw] = KeywordCategory.THREAT_INTEL
-                case _ if kw_lower in osint_terms:
-                    self.keyword_categories[kw] = KeywordCategory.OSINT
-                case _ if kw_lower in safety_terms:
-                    self.keyword_categories[kw] = KeywordCategory.SAFETY
-                case _ if kw_lower in ai_terms:
-                    self.keyword_categories[kw] = KeywordCategory.AI_ML
-                case _:
-                    # Check if any term contains the keyword or vice versa
-                    for term in threat_terms:
-                        if kw_lower in term or term in kw_lower:
-                            self.keyword_categories[kw] = KeywordCategory.THREAT_INTEL
-                            break
-                    else:
-                        for term in osint_terms:
-                            if kw_lower in term or term in kw_lower:
-                                self.keyword_categories[kw] = KeywordCategory.OSINT
-                                break
-                        else:
-                            for term in safety_terms:
-                                if kw_lower in term or term in kw_lower:
-                                    self.keyword_categories[kw] = KeywordCategory.SAFETY
-                                    break
-                            else:
-                                for term in ai_terms:
-                                    if kw_lower in term or term in kw_lower:
-                                        self.keyword_categories[kw] = KeywordCategory.AI_ML
-                                        break
-                                else:
-                                    self.keyword_categories[kw] = KeywordCategory.GENERAL
+            assigned = KeywordCategory.GENERAL
+            for terms, category in _buckets:
+                if kw_lower in terms:
+                    assigned = category
+                    break
+                if any(kw_lower in t or t in kw_lower for t in terms):
+                    assigned = category
+                    break
+            self.keyword_categories[kw] = assigned
 
     # ------------------------------------------------------------------
     # Dynamic keyword expansion via TF-IDF + BERT similarity
@@ -841,9 +832,7 @@ class InsightExtractor:
             top_keywords=top_kw,
             stem_mode=self.stemmer.stem_mode.value,
             case_sensitive=self.stemmer.case_sensitive,
-            custom_suffixes=list(self.stemmer.custom_suffixes)
-            if self.stemmer.custom_suffixes
-            else [],
+            custom_suffixes=tuple(self.stemmer.custom_suffixes),
             last_updated=format_timestamp(datetime.now(UTC)),
         )
 
@@ -877,7 +866,7 @@ class InsightExtractor:
         keyword_stats = self.get_keyword_stats()
 
         return ExtractResult(
-            timestamp=datetime.now(UTC),
+            timestamp=format_timestamp(datetime.now(UTC)),
             input_hash=input_hash,
             word_count=word_count,
             regex_entities=regex_entities,
@@ -899,7 +888,7 @@ class InsightExtractor:
     ) -> Path:
         """Format *result* as Markdown and write to *self.output_dir / filename*."""
         md_path = self.output_dir / filename
-        ts = format_timestamp(result.timestamp)
+        ts = result.timestamp
 
         lines: list[str] = [
             "# Insight Extraction Results\n",
