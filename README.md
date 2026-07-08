@@ -59,15 +59,34 @@ pip install -e ".[dev]"
 
 ## Known Issue — `ModelLoadError: name 'init_empty_weights' is not defined`
 
-**Cause:** `transformers >= 4.45` removed an internal symbol that `sentence-transformers` depends on when loading BERT models.
+**Cause:** `sentence-transformers` model loading needs `init_empty_weights` from the
+`accelerate` package. If `accelerate` isn't installed at all, this error appears.
 
 **Fix — run this in cmd then retry:**
 
 ```cmd
-pip install "transformers==4.44.2" "sentence-transformers==3.0.1"
+pip install "accelerate>=1.3.0"
 ```
 
-This project's `requirements.txt` and `constraints.txt` already cap `transformers < 4.45` to prevent this on fresh installs. If you installed without constraints and hit the error, the one-line fix above resolves it immediately.
+This project's `requirements.txt` and `constraints.txt` already include `accelerate`
+to prevent this on fresh installs.
+
+## Known Issue — `ImportError: cannot import name 'TorchTensorParallelPlugin' from 'accelerate.utils'`
+
+**Cause:** an `accelerate` version older than 1.3.0 installed alongside
+`transformers>=4.53.0`. Transformers' trainer module imports
+`TorchTensorParallelPlugin`, a symbol `accelerate` only added in 1.3.0. This fires at
+import time — as soon as anything imports `sentence_transformers` — not just on model
+load.
+
+**Fix — run this in cmd then retry:**
+
+```cmd
+pip install "accelerate>=1.3.0" --upgrade
+```
+
+`requirements.txt` and `constraints.txt` pin `accelerate>=1.3.0` (currently `1.14.0`
+in `constraints.txt`) to prevent this on fresh installs.
 
 ---
 
