@@ -8,6 +8,11 @@
 #   NOT during normal inference with all-MiniLM-L6-v2)
 # - accelerate: REQUIRED — provides init_empty_weights used by sentence-transformers.
 #   Missing accelerate causes: ModelLoadError: name 'init_empty_weights' is not defined
+#   Floor raised to >=1.3.0 — transformers>=4.53.0's trainer imports
+#   TorchTensorParallelPlugin from accelerate.utils, which accelerate<1.3.0 lacks:
+#   ImportError: cannot import name 'TorchTensorParallelPlugin' from 'accelerate.utils'
+#   (fires on any `import sentence_transformers`, so it breaks at package import time,
+#   not just on model load)
 # - sentence-transformers: 3.4.1 is the latest 3.x stable, tested against transformers 4.53+
 
 sentence-transformers>=3.4.1,<4.0.0
@@ -16,4 +21,4 @@ pyyaml>=6.0
 pydantic>=2.0
 transformers>=4.53.0,<5.0.0
 numpy>=1.26.0
-accelerate>=0.26.0
+accelerate>=1.3.0

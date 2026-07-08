@@ -1,5 +1,5 @@
 # Security Audit Report — insight-extractor v2.0.0
-**Date:** 2026-06-24  
+**Date:** 2026-06-24 (accelerate compatibility addendum: 2026-07-08)
 **Scanner tools:** pip-audit, bandit, detect-secrets  
 **Scope:** `src/`, `requirements.txt`, `constraints.txt`, `.github/workflows/`
 
@@ -67,6 +67,59 @@
 
 ---
 
+## Addendum 2026-07-08 — accelerate/transformers import incompatibility (not a CVE)
+
+**Finding:** the pin combination previously in `constraints.txt`
+(`transformers==4.53.0` + `accelerate==0.34.2`) does not import successfully.
+`transformers==4.53.0`'s `trainer.py` imports `TorchTensorParallelPlugin` from
+`accelerate.utils`, a symbol introduced in `accelerate` 1.3.0 — `accelerate==0.34.2`
+predates it. Result:
+
+```
+ImportError: cannot import name 'TorchTensorParallelPlugin' from 'accelerate.utils'
+```
+
+This fires the moment anything does `import sentence_transformers` (transitively,
+`import insight_extractor.extractor`) — a constraints-pinned install cannot even
+collect `tests/unit/`, let alone load a model. Not a security vulnerability; a
+packaging-compatibility bug in the previous pin set.
+
+**Verified reachable:** yes — reproduced in a clean Python 3.12 venv with
+`pip install -r requirements.txt -c constraints.txt`.
+
+**Fix applied:** `accelerate` floor raised to `>=1.3.0` in `requirements.txt` and
+`pyproject.toml`; `constraints.txt` re-pinned to `accelerate==1.14.0` (latest at time
+of fix, verified importable against `transformers==4.53.0` /
+`sentence-transformers==3.4.1`). `transformers` and `sentence-transformers` pins are
+unchanged — this addendum is scoped to `accelerate` only.
+
+**Verification performed:**
+- Clean-venv install with the new constraints succeeds
+- `import accelerate, sentence_transformers, transformers` succeeds
+- `from accelerate.utils import TorchTensorParallelPlugin` succeeds
+- `from accelerate import init_empty_weights` still succeeds (the original fix this
+  pin protects, unaffected by the bump)
+- `pytest tests/unit/` — 89/89 pass (previously failed to collect)
+
+### Note — additional `pip-audit` findings surfaced, not yet triaged
+
+Re-running `pip-audit` against the actual installed (constraints-pinned) environment
+as part of this fix surfaced 10 findings against `transformers==4.53.0`:
+`PYSEC-2025-211` through `PYSEC-2025-218` (8 advisories — count matches the existing
+"No upstream fix available" table above, likely the same GHSA advisories under PYSEC
+identifiers rather than new ones, but not confirmed one-for-one) plus `CVE-2026-1839`
+(already tracked above, verdict `UNREACHABLE`) and **`CVE-2026-4372`** (fixed in
+`5.3.0`, **not yet triaged** — not present in this document prior to this addendum).
+
+This is out of scope for an `accelerate`-only compatibility fix (bumping
+`transformers` beyond `4.53.0` is a separate, ask-first change per this repo's
+dependency rules). Flagged here for a dedicated `transformers` CVE re-triage —
+identify `CVE-2026-4372`'s affected component and reachability verdict, and confirm
+whether the `PYSEC-*` IDs are duplicates of the already-documented `CVE-2025-149xx`
+series or net-new.
+
+---
+
 ## SAST Findings (bandit)
 
 ### B615 — HuggingFace Unsafe Download (MEDIUM / HIGH confidence)
@@ -112,6 +165,25 @@ SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", revision="c9b44c9"
 -transformers==4.44.2
 +transformers==4.53.0
 +accelerate==0.34.2
+```
+
+### 2026-07-08 addendum — accelerate compatibility fix
+
+```diff
+--- a/requirements.txt
++++ b/requirements.txt
+-accelerate>=0.26.0
++accelerate>=1.3.0
+
+--- a/constraints.txt
++++ b/constraints.txt
+-accelerate==0.34.2
++accelerate==1.14.0
+
+--- a/pyproject.toml
++++ b/pyproject.toml
+-    "accelerate>=0.26.0",
++    "accelerate>=1.3.0",
 ```
 
 ---
