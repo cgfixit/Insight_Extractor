@@ -88,11 +88,21 @@ class DynamicKeywordStemmer:
         self.custom_suffixes: tuple[str, ...] = custom_suffixes
         self.max_pattern_length: int = max_pattern_length
 
+        # Precomputed once -- custom_suffixes is immutable after construction
+        self._suffix_group: str = "|".join(re.escape(s) for s in self.custom_suffixes)
+
         # Internal caches -- invalidated on keyword changes
         self._keywords: KeywordList = []
         self._compiled_master: KeywordPattern | None = None
         self._compiled_typed: TypedPatternDict | None = None
+        self._keyword_lookup: dict[str, str] | None = None
         self._last_updated: datetime | None = None
+
+        # Incremental-compilation cache -- tracks the keyword list and chunk
+        # patterns behind the last compiled_master, so appending keywords only
+        # compiles the new tail instead of rebuilding every regex from scratch.
+        self._compiled_snapshot: KeywordList = []
+        self._compiled_chunks: list[re.Pattern[str]] = []
 
     # -- Representation -------------------------------------------------------
 
@@ -137,8 +147,7 @@ class DynamicKeywordStemmer:
             case StemMode.EXACT:
                 return rf"\b{escaped}\b"
             case StemMode.STEM:
-                suffix_group = "|".join(re.escape(s) for s in self.custom_suffixes)
-                return rf"\b{escaped}(?:{suffix_group})?\b"
+                return rf"\b{escaped}(?:{self._suffix_group})?\b"
             case StemMode.PREFIX:
                 return rf"\b{escaped}\w*\b"
             case StemMode.SUFFIX:
@@ -247,6 +256,54 @@ class DynamicKeywordStemmer:
         except re.error as exc:
             raise PatternCompileError(f"Failed to compile combined pattern: {exc}") from exc
 
+    def compile_keywords_incremental(self, keywords: list[str]) -> KeywordPattern:
+        """Compile *keywords*, reusing previously compiled chunks when possible.
+
+        When *keywords* is exactly the previously compiled list plus new
+        keywords appended at the end (the common case as a keyword bank grows
+        run over run), only the new tail is compiled; the existing chunks are
+        kept as-is and combined with the new chunk(s). Any other change
+        (removal, reordering, first-time compilation) falls back to a full
+        :meth:`compile_keywords` rebuild.
+
+        Parameters
+        ----------
+        keywords:
+            Full current keyword list to compile.
+
+        Returns
+        -------
+        KeywordPattern
+            Compiled regex or chunked adapter matching any keyword variation --
+            identical in matching behavior to :meth:`compile_keywords`.
+        """
+        if not keywords:
+            self._compiled_snapshot = []
+            self._compiled_chunks = []
+            return re.compile(r"(?!)")
+
+        snapshot = self._compiled_snapshot
+        if snapshot and len(keywords) > len(snapshot) and keywords[: len(snapshot)] == snapshot:
+            new_pattern = self.compile_keywords(keywords[len(snapshot) :])
+            chunks = [*self._compiled_chunks, *self._as_chunks(new_pattern)]
+        elif snapshot == keywords:
+            chunks = self._compiled_chunks
+        else:
+            chunks = self._as_chunks(self.compile_keywords(keywords))
+
+        self._compiled_snapshot = list(keywords)
+        self._compiled_chunks = chunks
+        if len(chunks) == 1:
+            return chunks[0]
+        return ChunkedKeywordPattern(chunks)
+
+    @staticmethod
+    def _as_chunks(pattern: KeywordPattern) -> list[re.Pattern[str]]:
+        """Flatten a compiled pattern into its underlying regex chunk(s)."""
+        if isinstance(pattern, ChunkedKeywordPattern):
+            return pattern.patterns
+        return [pattern]
+
     def compile_typed_patterns(self, keywords: list[str]) -> TypedPatternDict:
         """Compile keywords into categorized patterns by type heuristic.
 
@@ -336,6 +393,7 @@ class DynamicKeywordStemmer:
         """Clear compiled pattern caches after keyword mutations."""
         self._compiled_master = None
         self._compiled_typed = None
+        self._keyword_lookup = None
         self._last_updated = datetime.now(UTC)
 
     # -- Lazy compiled pattern ------------------------------------------------
@@ -344,7 +402,7 @@ class DynamicKeywordStemmer:
     def compiled_pattern(self) -> KeywordPattern | None:
         """Lazily compiled master pattern -- rebuilt on cache miss."""
         if self._compiled_master is None and self._keywords:
-            self._compiled_master = self.compile_keywords(self._keywords)
+            self._compiled_master = self.compile_keywords_incremental(self._keywords)
         return self._compiled_master
 
     # -- Matching -------------------------------------------------------------
@@ -397,6 +455,19 @@ class DynamicKeywordStemmer:
 
         return results
 
+    def _get_keyword_lookup(self) -> dict[str, str]:
+        """Lazily build a lowercase-keyword -> original-keyword exact-match map.
+
+        First occurrence wins, matching the priority order of the linear scan
+        it replaces. Rebuilt on cache miss after any keyword mutation.
+        """
+        if self._keyword_lookup is None:
+            lookup: dict[str, str] = {}
+            for kw in self._keywords:
+                lookup.setdefault(kw.lower(), kw)
+            self._keyword_lookup = lookup
+        return self._keyword_lookup
+
     def _resolve_source_keyword(self, matched_text: str) -> str | None:
         """Map matched text back to its originating keyword.
 
@@ -415,10 +486,10 @@ class DynamicKeywordStemmer:
         """
         matched_lower = matched_text.lower()
 
-        # Exact match
-        for kw in self._keywords:
-            if matched_lower == kw.lower():
-                return kw
+        # Exact match -- O(1) via lazily-built lookup instead of a linear scan
+        exact = self._get_keyword_lookup().get(matched_lower)
+        if exact is not None:
+            return exact
 
         # Fuzzy fallback: check containment in either direction
         for kw in self._keywords:
@@ -499,7 +570,7 @@ class KeywordPatternRegistry:
         self.stemmer.set_keywords(keywords)
 
         if keywords:
-            compiled_dynamic = self.stemmer.compile_keywords(keywords)
+            compiled_dynamic = self.stemmer.compile_keywords_incremental(keywords)
             master_pattern = compiled_dynamic.pattern
             self._dynamic_patterns = {
                 PatternLabel.DYNAMIC_KEYWORD: master_pattern,
