@@ -202,6 +202,90 @@ class TestSpecialCharacters:
         _ = stemmer.compiled_pattern.search("using C++ and [test] cases")
 
 
+class TestCompileKeywordsIncremental:
+    """Incremental (append-only) compilation matches full-rebuild behavior."""
+
+    def test_first_call_matches_full_compile(self, stemmer: DynamicKeywordStemmer) -> None:
+        kws = ["ransomware", "CVE", "exploit"]
+        incremental = stemmer.compile_keywords_incremental(kws)
+        for kw in kws:
+            assert incremental.search(kw), f"failed to match {kw}"
+
+    def test_append_only_reuses_chunks_and_still_matches_all(
+        self, stemmer: DynamicKeywordStemmer
+    ) -> None:
+        first = ["ransomware", "CVE"]
+        stemmer.compile_keywords_incremental(first)
+        old_chunks = list(stemmer._compiled_chunks)
+
+        grown = [*first, "exploit", "phishing"]
+        pattern = stemmer.compile_keywords_incremental(grown)
+
+        # Original compiled chunks are reused, not recompiled
+        assert stemmer._compiled_chunks[: len(old_chunks)] == old_chunks
+        for kw in grown:
+            assert pattern.search(kw), f"failed to match {kw}"
+
+    def test_no_op_call_reuses_cache(self, stemmer: DynamicKeywordStemmer) -> None:
+        kws = ["ransomware", "CVE"]
+        stemmer.compile_keywords_incremental(kws)
+        chunks_before = stemmer._compiled_chunks
+        stemmer.compile_keywords_incremental(list(kws))
+        assert stemmer._compiled_chunks is chunks_before
+
+    def test_removal_falls_back_to_full_rebuild(self, stemmer: DynamicKeywordStemmer) -> None:
+        stemmer.compile_keywords_incremental(["ransomware", "phishing"])
+        pattern = stemmer.compile_keywords_incremental(["phishing"])
+        assert pattern.search("phishing")
+        assert not pattern.search("ransomware")
+
+    def test_reordering_falls_back_to_full_rebuild(self, stemmer: DynamicKeywordStemmer) -> None:
+        stemmer.compile_keywords_incremental(["ransomware", "phishing"])
+        pattern = stemmer.compile_keywords_incremental(["phishing", "ransomware"])
+        assert pattern.search("ransomware")
+        assert pattern.search("phishing")
+
+    def test_incremental_growth_across_chunk_boundary(self) -> None:
+        """Appending keywords past max_pattern_length still matches everything."""
+        stemmer = DynamicKeywordStemmer(stem_mode=StemMode.EXACT, max_pattern_length=50)
+        first = [f"kw_{i:05d}" for i in range(100)]
+        stemmer.compile_keywords_incremental(first)
+
+        grown = [*first, *(f"kw_{i:05d}" for i in range(100, 200))]
+        pattern = stemmer.compile_keywords_incremental(grown)
+
+        text = " ".join(grown)
+        matches = {
+            match.group(0)
+            for match in (pattern.finditer(text) if hasattr(pattern, "finditer") else [])
+        }
+        assert matches == set(grown)
+
+    def test_empty_keywords_never_matches(self, stemmer: DynamicKeywordStemmer) -> None:
+        stemmer.compile_keywords_incremental(["ransomware"])
+        pattern = stemmer.compile_keywords_incremental([])
+        assert not pattern.search("ransomware")
+
+
+class TestResolveSourceKeywordLookup:
+    """The lazily-built exact-match lookup preserves first-match priority."""
+
+    def test_exact_match_prefers_first_occurrence(self, stemmer: DynamicKeywordStemmer) -> None:
+        stemmer.set_keywords(["Ransomware", "ransomware"])
+        assert stemmer._resolve_source_keyword("ransomware") == "Ransomware"
+
+    def test_lookup_invalidated_on_keyword_change(self, stemmer: DynamicKeywordStemmer) -> None:
+        stemmer.set_keywords(["ransomware"])
+        assert stemmer._resolve_source_keyword("ransomware") == "ransomware"
+        stemmer.set_keywords(["phishing"])
+        assert stemmer._resolve_source_keyword("ransomware") is None
+        assert stemmer._resolve_source_keyword("phishing") == "phishing"
+
+    def test_substring_fallback_still_works(self, stemmer: DynamicKeywordStemmer) -> None:
+        stemmer.set_keywords(["ransomware"])
+        assert stemmer._resolve_source_keyword("ransomwares") == "ransomware"
+
+
 class TestRepr:
     """String representations."""
 
@@ -248,3 +332,17 @@ class TestRegistry:
         registry.regenerate_dynamic_patterns(sample_keywords)
         results = registry.extract_all("ransomware and CVE")
         assert isinstance(results, dict)
+
+    def test_regenerate_dynamic_patterns_incremental_growth(
+        self, registry_with_stemmer: KeywordPatternRegistry, sample_keywords: list[str]
+    ) -> None:
+        """Growing the keyword bank across repeated calls still matches old and new."""
+        registry_with_stemmer.regenerate_dynamic_patterns(sample_keywords)
+        grown = [*sample_keywords, "zero-day", "botnet"]
+        registry_with_stemmer.regenerate_dynamic_patterns(grown)
+
+        results = registry_with_stemmer.extract_all("ransomware, botnet, and a zero-day exploit")
+        all_matches = {m.lower() for matches in results.values() for m in matches}
+        assert "ransomware" in all_matches
+        assert "botnet" in all_matches
+        assert "zero-day" in all_matches
