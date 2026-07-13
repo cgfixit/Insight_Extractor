@@ -14,7 +14,7 @@
 # KEY FIX — ImportError: cannot import name 'TorchTensorParallelPlugin' from
 # 'accelerate.utils'
 #   Root cause: accelerate==0.34.2 (previously pinned here) predates the
-#   TorchTensorParallelPlugin symbol that transformers==4.53.0's trainer module
+#   TorchTensorParallelPlugin symbol that transformers==5.5.0's trainer module
 #   imports at package-import time. Any `import sentence_transformers` (and thus
 #   any `import insight_extractor.extractor`) failed to even collect. accelerate
 #   pinned to 1.14.0 here, tested against transformers==4.53.0.
@@ -29,6 +29,6 @@ sentence-transformers==3.4.1
 scikit-learn==1.6.1
 pyyaml==6.0.2
 pydantic==2.11.0
-transformers==4.53.0
+transformers==5.5.0
 numpy==2.2.6
 accelerate==1.14.0
