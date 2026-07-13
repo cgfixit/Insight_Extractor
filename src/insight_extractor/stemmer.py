@@ -523,6 +523,7 @@ class KeywordPatternRegistry:
         self.stemmer: DynamicKeywordStemmer | None = stemmer
         self._dynamic_patterns: RegexPatternDict = {}
         self._compiled_dynamic: KeywordPattern | None = None
+        self._compiled_static_patterns: dict[str, re.Pattern[str]] = {}
 
     # -- Representation -------------------------------------------------------
 
@@ -603,7 +604,11 @@ class KeywordPatternRegistry:
         # Static patterns
         for label, pattern in self.static_patterns.items():
             try:
-                matches = re.findall(pattern, text, re.IGNORECASE)
+                compiled = self._compiled_static_patterns.get(pattern)
+                if compiled is None:
+                    compiled = re.compile(pattern, re.IGNORECASE)
+                    self._compiled_static_patterns[pattern] = compiled
+                matches = compiled.findall(text)
             except re.error as exc:
                 logger.warning("Invalid regex pattern '%s': %s", label, exc)
                 continue
@@ -626,3 +631,4 @@ class KeywordPatternRegistry:
                     seen_dynamic.add(m_str)
 
         return dict(results)
+
