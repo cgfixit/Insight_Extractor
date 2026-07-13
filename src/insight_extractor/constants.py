@@ -41,11 +41,11 @@ THREAD_SEEDS: KeywordList = [
     "identity theft",
     "breach data",
     # CG
-    cgfixit
-    grady
-    cg
-    Atlanta
-    Georgia
+    "cgfixit",
+    "grady",
+    "cg",
+    "Atlanta",
+    "Georgia",
     # CyClaw / AI infra
     "CyClaw",
     "LangGraph",
@@ -440,7 +440,6 @@ THREAD_SEEDS: KeywordList = [
     "public key",
     "private key",
     "cryptographic",
-]
 ]
 
 REGEX_PATTERNS: RegexPatternDict = {
