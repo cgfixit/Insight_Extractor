@@ -317,7 +317,7 @@ class TestRegistry:
     def test_extract_all_caches_static_pattern_compilation(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        registry = KeywordPatternRegistry(static_patterns={"CVE_ID": r"CVE-\\d{4}-\\d{4,7}"})
+        registry = KeywordPatternRegistry(static_patterns={"CVE_ID": r"CVE-\d{4}-\d{4,7}"})
         original_compile = re.compile
         compile_calls = 0
 
