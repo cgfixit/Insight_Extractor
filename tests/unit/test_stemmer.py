@@ -9,7 +9,7 @@ import pytest
 from insight_extractor.config import StemMode
 from insight_extractor.stemmer import DynamicKeywordStemmer, KeywordPatternRegistry
 
-# â”€â”€ DynamicKeywordStemmer tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── DynamicKeywordStemmer tests ──────────────────────────────────────────────
 
 
 class TestInit:
@@ -21,7 +21,7 @@ class TestInit:
         # Default suffixes tuple is non-empty
         assert isinstance(stemmer.custom_suffixes, tuple)
         assert len(stemmer.custom_suffixes) > 0
-        # No keywords set yet â€” compiled_pattern is None
+        # No keywords set yet — compiled_pattern is None
         assert stemmer.compiled_pattern is None
 
     def test_init_custom(self) -> None:
@@ -80,7 +80,7 @@ class TestCompileKeywords:
     """Compiling keywords into a regex pattern via set_keywords."""
 
     def test_compile_keywords_empty(self, stemmer: DynamicKeywordStemmer) -> None:
-        # No keywords â€” compiled_pattern is None
+        # No keywords — compiled_pattern is None
         assert stemmer.compiled_pattern is None
 
     def test_compile_keywords_single(self, stemmer: DynamicKeywordStemmer) -> None:
@@ -143,12 +143,12 @@ class TestAddRemoveKeyword:
         stemmer.set_keywords(["old"])
         old_pat = stemmer.compiled_pattern
         stemmer.add_keyword("new")
-        # Cache was invalidated â€” accessing compiled_pattern rebuilds it
+        # Cache was invalidated — accessing compiled_pattern rebuilds it
         assert stemmer.compiled_pattern is not old_pat
 
 
 class TestFindMatches:
-    """Match extraction from text â€” returns list[MatchInfo] Pydantic objects."""
+    """Match extraction from text — returns list[MatchInfo] Pydantic objects."""
 
     def test_find_matches_exact(self, stemmer_exact: DynamicKeywordStemmer) -> None:
         stemmer_exact.set_keywords(["ransomware"])
@@ -193,7 +193,7 @@ class TestSpecialCharacters:
     def test_special_characters_escaped(self, stemmer: DynamicKeywordStemmer) -> None:
         # Verify keywords with regex-special chars compile without PatternCompileError.
         # \b word boundaries around non-word-char-terminated tokens (C++, [test])
-        # mean they won't match in typical text â€” the point is they DON'T throw.
+        # mean they won't match in typical text — the point is they DON'T throw.
         kws = ["C++", "[test]", "a.b", "x*y"]
         stemmer.set_keywords(kws)
         assert stemmer.compiled_pattern is not None
@@ -297,7 +297,7 @@ class TestRepr:
         assert "DynamicKeywordStemmer" in repr(stemmer)
 
 
-# â”€â”€ KeywordPatternRegistry tests â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── KeywordPatternRegistry tests ─────────────────────────────────────────────
 
 
 class TestRegistry:
@@ -317,7 +317,7 @@ class TestRegistry:
     def test_extract_all_caches_static_pattern_compilation(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        registry = KeywordPatternRegistry(static_patterns={"CVE_ID": r"CVE-\d{4}-\d{4,7}"})
+        registry = KeywordPatternRegistry(static_patterns={"CVE_ID": r"CVE-\\d{4}-\\d{4,7}"})
         original_compile = re.compile
         compile_calls = 0
 
@@ -369,4 +369,3 @@ class TestRegistry:
         assert "ransomware" in all_matches
         assert "botnet" in all_matches
         assert "zero-day" in all_matches
-
