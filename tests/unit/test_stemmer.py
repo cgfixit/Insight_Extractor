@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+import pytest
+
 from insight_extractor.config import StemMode
 from insight_extractor.stemmer import DynamicKeywordStemmer, KeywordPatternRegistry
 
@@ -311,6 +313,27 @@ class TestRegistry:
         text = "The ransomware used a CVE exploit."
         results = registry_with_stemmer.extract_all(text)
         assert isinstance(results, dict)
+
+    def test_extract_all_caches_static_pattern_compilation(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        registry = KeywordPatternRegistry(static_patterns={"CVE_ID": r"CVE-\d{4}-\d{4,7}"})
+        original_compile = re.compile
+        compile_calls = 0
+
+        def counting_compile(pattern: str, flags: int = 0) -> re.Pattern[str]:
+            nonlocal compile_calls
+            compile_calls += 1
+            return original_compile(pattern, flags)
+
+        monkeypatch.setattr("insight_extractor.stemmer.re.compile", counting_compile)
+
+        first = registry.extract_all("CVE-2026-1234")
+        second = registry.extract_all("CVE-2026-5678")
+
+        assert first == {"CVE_ID": ["CVE-2026-1234"]}
+        assert second == {"CVE_ID": ["CVE-2026-5678"]}
+        assert compile_calls == 1
 
     def test_extract_all_dynamic_keyword_matches(
         self,
