@@ -8,7 +8,6 @@ type RegexPatternDict = dict[str, str]
 type KeywordList = list[str]
 
 THREAD_SEEDS: KeywordList = [
-    THREAD_SEEDS: KeywordList = [
     # Ransomware / threat intel
     "ransomware",
     "nitrogen",
