@@ -1,68 +1,75 @@
-﻿# AGENTS.md
+# AGENTS.md
 
-Guidance for AI coding agents working in `Insight_Extractor`.
+Guidance for AI coding agents working in \`Insight_Extractor\`.
 
-Read this before edits and then use canonical project documentation for behavior details:
+Read this file before edits. Use the source code as the behavioral authority, then \`SPEC.md\`, then \`README.md\`. The detailed operating manual is \`CLAUDE.md\`; the security audit is \`docs/SECURITY_AUDIT.md\`.
 
-- `README.md`
-- `SPEC.md`
-- `SECURITY_AUDIT.md`
-- `.github/workflows/ci.yml`
-- `requirements.txt`
-- `constraints.txt`
+## Project
 
-## Project Overview
+\`Insight_Extractor\` is a Python 3.12+ src-layout library for threat-intelligence, OSINT, and security text. It combines:
 
-`Insight_Extractor` is a Python 3.12+ library that combines regex and semantic extraction for threat-intel/security text.
-The package entrypoint is `insight_extractor` (`python -m insight_extractor`) and project metadata is in `pyproject.toml`.
+- static regex extraction;
+- dynamic keyword stemming and pattern compilation;
+- optional BERT semantic scoring through \`sentence-transformers\`;
+- Pydantic v2 result models;
+- Markdown reports and JSON state persistence.
 
-## Stack and Layout
+Important paths:
 
-- Python 3.12+
-- Ruff, mypy, pytest
-- Runtime deps in `requirements.txt` pinned by `constraints.txt`
-- Source: `src/insight_extractor/`
-- Tests: `tests/unit/` and `tests/integration/`
+- \`src/insight_extractor/\` — package code;
+- \`tests/unit/\` — model-free unit tests;
+- \`tests/integration/\` — real-model tests;
+- \`.github/workflows/ci.yml\` — required lint, type, unit, and smoke gates;
+- \`requirements.txt\`, \`constraints.txt\`, \`pyproject.toml\` — dependency declarations and pins;
+- \`.codex/\` — Codex instructions and project skills;
+- \`.claude/skills/\` — existing detailed implementation checklists.
 
-## Setup
+## Setup and validation
 
-```bash
+Use a Python 3.12+ virtual environment when possible:
+
+\`\`\`powershell
 python -m pip install -r requirements.txt -c constraints.txt
 python -m pip install -e ".[dev]"
-```
+\`\`\`
 
-## Common Commands
+Required gates:
 
-Run CLI:
+\`\`\`powershell
+python -m ruff check src/ tests/
+python -m ruff format --check src/ tests/
+python -m mypy src/insight_extractor
+python -m pytest tests/unit/ -v --tb=short
+\`\`\`
 
-```bash
-python -m insight_extractor sample_input.txt
-```
+The CI smoke path must remain model-free. Real BERT downloads belong only to \`tests/integration/\`, manual workflow dispatch, or commits containing \`[run-integration]\`.
 
-Run tests:
+## Non-negotiable invariants
 
-```bash
-pytest tests/unit/ -v --tb=short
-pytest tests/ -v --tb=short
-```
+- Keep model and tokenizer loading lazy. \`config.py\`, \`constants.py\`, \`models.py\`, \`exceptions.py\`, and \`utils.py\` must remain importable without heavy ML dependencies.
+- Unit tests must not access the network or download HuggingFace models. Inject fake model/tokenizer objects when testing semantic orchestration.
+- If changing a regex entity, keep \`PatternLabel\`, \`REGEX_PATTERNS\`, tests, and the README table synchronized.
+- Dependency changes update \`requirements.txt\`, \`constraints.txt\`, and \`pyproject.toml\` together; \`accelerate\` is load-bearing.
+- Preserve output files and state schema: \`insights_extracted.md\` and \`insight_extractor_state.json\`.
+- Do not commit generated reports, state files, JUnit/coverage artifacts, logs, model caches, secrets, or tokens.
+- Use explicit UTF-8 file I/O and pathlib for new Python code.
+- Do not weaken Ruff, mypy, pytest, Gitleaks, or workflow gates to make CI green.
 
-Lint and type-check:
+## Git and PR workflow
 
-```bash
-ruff check src/ tests/
-ruff format --check src/ tests/
-mypy src/insight_extractor
-```
+- Branch from \`main\`; target \`main\`; never force-push shared branches.
+- Keep docs/skill changes separate from runtime changes.
+- Stage named files only.
+- Run the narrowest applicable gates and report skipped checks with reasons.
+- Use conventional commit prefixes (\`docs:\`, \`feat:\`, \`fix:\`, \`chore:\`) and keep PRs focused.
 
-## Security Rules
+## Codex dispatch
 
-- Never commit secrets or token dumps.
-- Do not add secrets to sample data or tests.
-- Keep model downloads, network calls, and integrations explicit and deterministic.
+Read \`.codex/README.md\` and \`.codex/codex_custom_instructions.md\`, then use the relevant skill:
 
-## Development Workflow
+- \`preflight\` — before commit/push;
+- \`verify-no-model\` — validate pipeline changes without downloading BERT;
+- \`add-entity-pattern\` — add a static regex entity end to end;
+- \`optimize\` — measured, minimal optimization of a real hot path.
 
-- Keep changes minimal for onboarding tasks.
-- Use a feature branch and open PRs for merges into `main`.
-- Do not force-push to shared branches.
-- For each PR, run the commands that are touched by the change and report skips.
+For fuller implementation checklists, consult the matching file under \`.claude/skills/\`.
