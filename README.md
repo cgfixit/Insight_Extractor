@@ -1,4 +1,5 @@
-# insight-extractor
+# Insight_Extractor
+
 
 **BERT + regex insight extractor with dynamic keyword stemmer.**
 
@@ -49,7 +50,7 @@ pip install -e .
 
 This installs the known-good pinned versions from `constraints.txt`, avoiding the `transformers` compatibility issue described below.
 
-### Alternative — install dev dependencies too
+### Alternative (Lighter version in this repo) — install dev dependencies too
 
 ```cmd
 pip install -e ".[dev]"
