@@ -9,26 +9,26 @@ This is a measured optimization workflow, not a broad refactor.
 
 ## Scope
 
-Start from \`main\`, read \`CLAUDE.md\`, and trace every caller before changing a shared helper. Candidate hot paths are:
+Start from `main`, read `CLAUDE.md`, and trace every caller before changing a shared helper. Candidate hot paths are:
 
-- \`InsightExtractor.extract_regex_entities\`;
-- \`DynamicKeywordStemmer\` compilation and matching;
-- \`KeywordPatternRegistry.extract_all\`;
+- `InsightExtractor.extract_regex_entities`;
+- `DynamicKeywordStemmer` compilation and matching;
+- `KeywordPatternRegistry.extract_all`;
 - repeated state serialization/loading;
-- TF-IDF candidate selection in \`update_thread_keywords\`.
+- TF-IDF candidate selection in `update_thread_keywords`.
 
 Do not optimize BERT behavior without a reproducible model-backed benchmark. Do not add dependencies, change public signatures, alter thresholds, remove lazy loading, or change report/state formats as part of an optimization.
 
 ## Loop
 
-1. Establish a baseline with the relevant unit tests and a deterministic model-free \`timeit\` or repeated-input benchmark.
+1. Establish a baseline with the relevant unit tests and a deterministic model-free `timeit` or repeated-input benchmark.
 2. Identify the actual allocation, repeated scan, or recompilation causing the cost.
 3. Make the smallest local change that preserves exact output order, deduplication, match spans, and exception behavior.
 4. Add or update one focused unit test for the preserved behavior.
-5. Re-run the baseline benchmark, \`preflight\`, and \`verify-no-model\`.
+5. Re-run the baseline benchmark, `preflight`, and `verify-no-model`.
 6. Keep the change only when the measurement is reproducible and the diff is smaller than the operational complexity it introduces.
 
-Use a \`# ponytail:\` comment when deliberately accepting a known ceiling, for example: \`# ponytail: linear scan retained; build an indexed matcher only after profiling proves it matters\`.
+Use a `# ponytail:` comment when deliberately accepting a known ceiling, for example: `# ponytail: linear scan retained; build an indexed matcher only after profiling proves it matters`.
 
 ## Evidence
 
