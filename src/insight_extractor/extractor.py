@@ -780,13 +780,14 @@ class InsightExtractor:
     # ------------------------------------------------------------------
     def extract_keywords_with_positions(self, text: str) -> list[dict[str, Any]]:
         """Use the stemmer's compiled pattern to find all keyword matches with positions."""
-        if not self.stemmer.compiled_pattern:
+        pattern = self.stemmer.compiled_pattern
+        if pattern is None:
             return []
 
         results: list[dict[str, Any]] = []
         seen_spans: set[tuple[int, int]] = set()
 
-        for match in self.stemmer.compiled_pattern.finditer(text):
+        for match in pattern.finditer(text):
             start = match.start()
             end = match.end()
             if (start, end) in seen_spans:
@@ -794,12 +795,7 @@ class InsightExtractor:
             seen_spans.add((start, end))
 
             matched_text = match.group(0)
-            # Determine which keyword this match corresponds to
-            keyword = matched_text
-            for kw in self.thread_keywords:
-                if kw.lower() in matched_text.lower() or matched_text.lower() in kw.lower():
-                    keyword = kw
-                    break
+            keyword = self.stemmer._resolve_source_keyword(matched_text) or matched_text
 
             category = self.keyword_categories.get(keyword, KeywordCategory.GENERAL)
             results.append(

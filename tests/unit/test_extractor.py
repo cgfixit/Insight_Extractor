@@ -81,6 +81,20 @@ def test_regex_and_dynamic_can_run_without_model(tmp_path: Path) -> None:
     assert extractor.extract_dynamic_entities(text)
 
 
+def test_keyword_positions_resolve_stemmed_matches(tmp_path: Path) -> None:
+    extractor = InsightExtractor(seed_keywords=["ransomware"], output_dir=tmp_path)
+
+    assert extractor.extract_keywords_with_positions("Ransomwares") == [
+        {
+            "keyword": "ransomware",
+            "match": "Ransomwares",
+            "start": 0,
+            "end": 11,
+            "category": "threat_intel",
+        }
+    ]
+
+
 def test_config_loads_supported_formats(tmp_path: Path) -> None:
     toml_file = tmp_path / "config.toml"
     toml_file.write_text('seed_keywords = ["tomlkw"]\nsimilarity_threshold = 0.25\n')
