@@ -631,4 +631,3 @@ class KeywordPatternRegistry:
                     seen_dynamic.add(m_str)
 
         return dict(results)
-
