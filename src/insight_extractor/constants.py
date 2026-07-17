@@ -40,12 +40,6 @@ THREAD_SEEDS: KeywordList = [
     "credential reset",
     "identity theft",
     "breach data",
-    # CG
-    "cgfixit",
-    "grady",
-    "cg",
-    "Atlanta",
-    "Georgia",
     # CyClaw / AI infra
     "CyClaw",
     "LangGraph",
