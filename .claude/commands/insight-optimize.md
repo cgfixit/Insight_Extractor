@@ -36,4 +36,4 @@ Follow `.claude/skills/insight-optimize/SKILL.md` for the full process, ground-t
   - Lazy loading (no top-level heavy imports in ML-free modules)
   - Pydantic v2 output schemas (never bare dicts)
   - Windows cmd.exe + Linux CI compatibility
-  - Existing fixture behavior (`sample_input.txt`, `sample_extracted_insights.md`)
+  - Existing fixture behavior (`src/sample_input.txt`, `src/sample_extracted_insights.md`)
