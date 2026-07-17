@@ -32,7 +32,7 @@ Module map with actual sizes and load-bearing symbols:
 | Module | LOC | Key symbols | ML imports |
 |---|---|---|---|
 | `config.py` | 44 | `StemMode`, `KeywordCategory`, `PatternLabel` — all `@final` `StrEnum` | **Zero — keep it that way** |
-| `constants.py` | 415 | `THREAD_SEEDS` (368 keywords), `REGEX_PATTERNS` (15 patterns keyed by `PatternLabel`) | **Zero** |
+| `constants.py` | 415 | `THREAD_SEEDS` (363 keywords), `REGEX_PATTERNS` (15 patterns keyed by `PatternLabel`) | **Zero** |
 | `models.py` | 54 | Pydantic v2: `MatchInfo`, `KeywordStats`, `SemanticHit`, `SentenceScore`, `ExtractResult` (with `validate_timestamp` field validator — timestamps are `str`, never `datetime`) | **Zero** |
 | `exceptions.py` | 25 | `InsightExtractorError` hierarchy; subclasses mix in stdlib bases (`ConfigLoadError` + `ValueError`, `ModelLoadError` + `RuntimeError`) | **Zero** |
 | `utils.py` | 42 | `format_timestamp`, `compute_text_hash`, filename helpers | **Zero** |

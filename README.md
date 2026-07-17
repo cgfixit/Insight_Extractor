@@ -432,7 +432,7 @@ python -m insight_extractor src/sample_input.txt
 ```
 
 > The transcript below was captured with the original 69-keyword seed bank; the current
-> default `THREAD_SEEDS` bank has 368 keywords, so your counts will be higher.
+> default `THREAD_SEEDS` bank has 363 keywords, so your counts will be higher.
 
 ### Console Output
 
