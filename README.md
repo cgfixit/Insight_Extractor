@@ -425,11 +425,14 @@ mypy src/insight_extractor
 ## Example Output
 
 The following shows actual pipeline output when run against an AI safety research corpus
-(`sample_input.txt` — 19,248 words, 441 extracted insights, sourced from cgfixit.com RAG DB).
+(`src/sample_input.txt` — 19,248 words, 441 extracted insights, sourced from cgfixit.com RAG DB).
 
 ```
-python -m insight_extractor sample_input.txt
+python -m insight_extractor src/sample_input.txt
 ```
+
+> The transcript below was captured with the original 69-keyword seed bank; the current
+> default `THREAD_SEEDS` bank has 368 keywords, so your counts will be higher.
 
 ### Console Output
 
@@ -565,9 +568,9 @@ Results saved to: insights_extracted.md
 `adversarial`, `capability`, `approval`, `governance`
 ```
 
-> **Sample files included:** `sample_input.txt` (the AI safety corpus above) and
-> `sample_extracted_insights.md` (full output) are included in this repo for reference.
-> Run `python -m insight_extractor sample_input.txt` to reproduce.
+> **Sample files included:** `src/sample_input.txt` (the AI safety corpus above) and
+> `src/sample_extracted_insights.md` (full output) are included in this repo for
+> reference. Run `python -m insight_extractor src/sample_input.txt` to reproduce.
 
 ---
 ## License

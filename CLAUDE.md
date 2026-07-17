@@ -25,7 +25,7 @@ write code that works on both.
 | Module | Role | Imports heavy ML? |
 |---|---|---|
 | `src/insight_extractor/config.py` | `StemMode`, `KeywordCategory`, `PatternLabel` StrEnums | No — keep it that way |
-| `src/insight_extractor/constants.py` | `THREAD_SEEDS` (69 keywords), `REGEX_PATTERNS` (15 patterns) | No — keep it that way |
+| `src/insight_extractor/constants.py` | `THREAD_SEEDS` (368 keywords), `REGEX_PATTERNS` (15 patterns) | No — keep it that way |
 | `src/insight_extractor/models.py` | Pydantic v2 models: `MatchInfo`, `KeywordStats`, `SemanticHit`, `SentenceScore`, `ExtractResult` | No — keep it that way |
 | `src/insight_extractor/exceptions.py` | `InsightExtractorError` hierarchy | No — keep it that way |
 | `src/insight_extractor/utils.py` | logging, `format_timestamp`, `compute_text_hash`, filename helpers | No — keep it that way |
@@ -93,8 +93,9 @@ any existing `insight_extractor_state.json` there (state persists between runs a
 contaminate later runs). Never run it from the repo root — run from a scratch directory,
 or use the API with `output_dir=` pointed somewhere disposable.
 
-`sample_input.txt` (19k-word AI-safety corpus) and `sample_extracted_insights.md` are
-checked-in reference fixtures — don't overwrite them.
+`src/sample_input.txt` (19k-word AI-safety corpus) and `src/sample_extracted_insights.md`
+are checked-in reference fixtures — don't overwrite them. (They live under `src/`, not
+the repo root.)
 
 ---
 

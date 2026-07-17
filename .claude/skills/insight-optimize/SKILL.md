@@ -32,7 +32,7 @@ Module map with actual sizes and load-bearing symbols:
 | Module | LOC | Key symbols | ML imports |
 |---|---|---|---|
 | `config.py` | 44 | `StemMode`, `KeywordCategory`, `PatternLabel` — all `@final` `StrEnum` | **Zero — keep it that way** |
-| `constants.py` | 415 | `THREAD_SEEDS` (69 keywords), `REGEX_PATTERNS` (15 patterns keyed by `PatternLabel`) | **Zero** |
+| `constants.py` | 415 | `THREAD_SEEDS` (368 keywords), `REGEX_PATTERNS` (15 patterns keyed by `PatternLabel`) | **Zero** |
 | `models.py` | 54 | Pydantic v2: `MatchInfo`, `KeywordStats`, `SemanticHit`, `SentenceScore`, `ExtractResult` (with `validate_timestamp` field validator — timestamps are `str`, never `datetime`) | **Zero** |
 | `exceptions.py` | 25 | `InsightExtractorError` hierarchy; subclasses mix in stdlib bases (`ConfigLoadError` + `ValueError`, `ModelLoadError` + `RuntimeError`) | **Zero** |
 | `utils.py` | 42 | `format_timestamp`, `compute_text_hash`, filename helpers | **Zero** |
@@ -126,8 +126,8 @@ For each distinct opportunity:
   `gitleaks.yml`) to get green. Fix the code or stop and ask.
 - Preserve, in every PR: lazy loading (no top-level heavy imports in the five
   ML-free modules), Pydantic v2 output schemas, Windows cmd.exe + Linux CI
-  compatibility, and the checked-in fixtures (`sample_input.txt`,
-  `sample_extracted_insights.md`) byte-for-byte.
+  compatibility, and the checked-in fixtures (`src/sample_input.txt`,
+  `src/sample_extracted_insights.md`) byte-for-byte.
 - Behavior changes to public defaults (`similarity_threshold`, `stem_mode`, `top_k`,
   suffix tuple, `THREAD_SEEDS`, `REGEX_PATTERNS` semantics) or output file formats
   (`insights_extracted.md` structure, state JSON schema) are ask-first, with 2–3
