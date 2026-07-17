@@ -10,6 +10,7 @@ from typing import Any
 import numpy as np
 import pytest
 
+from insight_extractor.config import KeywordCategory
 from insight_extractor.exceptions import ConfigLoadError, ModelLoadError, StateLoadError
 from insight_extractor.extractor import InsightExtractor
 
@@ -156,3 +157,52 @@ def test_model_load_failure_is_wrapped(monkeypatch: pytest.MonkeyPatch, tmp_path
 
     with pytest.raises(ModelLoadError):
         _ = extractor.model
+
+
+class TestAutoCategorization:
+    def test_ai_safety_terms_map_to_ai_safety(self, tmp_path: Path) -> None:
+        extractor = InsightExtractor(seed_keywords=["alignment", "jailbreak"], output_dir=tmp_path)
+        assert extractor.keyword_categories["alignment"] is KeywordCategory.AI_SAFETY
+        assert extractor.keyword_categories["jailbreak"] is KeywordCategory.AI_SAFETY
+
+    def test_secops_terms_map_to_infosec(self, tmp_path: Path) -> None:
+        extractor = InsightExtractor(
+            seed_keywords=["incident response", "siem"], output_dir=tmp_path
+        )
+        assert extractor.keyword_categories["incident response"] is KeywordCategory.INFOSEC
+        assert extractor.keyword_categories["siem"] is KeywordCategory.INFOSEC
+
+    def test_no_category_is_child_safety(self, tmp_path: Path) -> None:
+        assert not hasattr(KeywordCategory, "CHILD_SAFETY")
+        assert "child_safety" not in [c.value for c in KeywordCategory]
+
+    def test_substring_false_positives_stay_general(self, tmp_path: Path) -> None:
+        # Regression: bare substring matching filed "legislation" under the safety
+        # bucket (contains "sla") and "despair" under ai_infra (contains "ai").
+        extractor = InsightExtractor(
+            seed_keywords=["legislation", "despair", "homelessness"], output_dir=tmp_path
+        )
+        assert extractor.keyword_categories["legislation"] is KeywordCategory.GENERAL
+        assert extractor.keyword_categories["despair"] is KeywordCategory.GENERAL
+        assert extractor.keyword_categories["homelessness"] is KeywordCategory.GENERAL
+
+    def test_whole_word_containment_still_matches(self, tmp_path: Path) -> None:
+        extractor = InsightExtractor(seed_keywords=["confirmation bias"], output_dir=tmp_path)
+        assert extractor.keyword_categories["confirmation bias"] is KeywordCategory.AI_SAFETY
+
+    def test_load_state_remaps_legacy_child_safety(self, tmp_path: Path) -> None:
+        state_file = tmp_path / "legacy_state.json"
+        state_file.write_text(
+            json.dumps(
+                {
+                    "thread_keywords": ["safety"],
+                    "keyword_freq": {"safety": 3},
+                    "keyword_categories": {"safety": "child_safety"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        extractor = InsightExtractor(seed_keywords=["safety"], output_dir=tmp_path)
+        extractor._model = FakeModel()
+        assert extractor.load_state(state_file) is True
+        assert extractor.keyword_categories["safety"] is KeywordCategory.AI_SAFETY

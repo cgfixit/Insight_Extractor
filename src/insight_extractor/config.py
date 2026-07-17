@@ -18,7 +18,7 @@ class StemMode(StrEnum):
 class KeywordCategory(StrEnum):
     THREAT_INTEL = "threat_intel"
     OSINT = "osint"
-    CHILD_SAFETY = "child_safety"
+    AI_SAFETY = "ai_safety"
     AI_INFRA = "ai_infra"
     INFOSEC = "infosec"
     GENERAL = "general"

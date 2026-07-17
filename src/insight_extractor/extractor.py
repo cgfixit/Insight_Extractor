@@ -219,7 +219,7 @@ osint_terms: set[str] = {
     "property records",
 }
 
-safety_terms: set[str] = {
+ai_safety_terms: set[str] = {
     "safety",
     "alignment",
     "jailbreak",
@@ -240,6 +240,9 @@ safety_terms: set[str] = {
     "robustness",
     "hallucination",
     "toxicity",
+}
+
+infosec_terms: set[str] = {
     "red teaming",
     "blue teaming",
     "purple teaming",
@@ -533,12 +536,18 @@ class InsightExtractor:
     # ------------------------------------------------------------------
     # Auto-categorisation
     # ------------------------------------------------------------------
+    @staticmethod
+    def _word_contains(needle: str, haystack: str) -> bool:
+        """True if *needle* occurs in *haystack* as a whole word (not a substring)."""
+        return re.search(rf"(?<!\w){re.escape(needle)}(?!\w)", haystack) is not None
+
     def _auto_categorize_keywords(self) -> None:
         """Heuristic categorisation of keywords into KeywordCategory buckets."""
         _buckets: list[tuple[set[str], KeywordCategory]] = [
             (threat_terms, KeywordCategory.THREAT_INTEL),
             (osint_terms, KeywordCategory.OSINT),
-            (safety_terms, KeywordCategory.CHILD_SAFETY),
+            (ai_safety_terms, KeywordCategory.AI_SAFETY),
+            (infosec_terms, KeywordCategory.INFOSEC),
             (ai_terms, KeywordCategory.AI_INFRA),
         ]
         for kw in self.thread_keywords:
@@ -550,7 +559,13 @@ class InsightExtractor:
                 if kw_lower in terms:
                     assigned = category
                     break
-                if any(kw_lower in t or t in kw_lower for t in terms):
+                # Whole-word containment only: bare substring matching filed
+                # "legislation" under the old safety bucket (contains "sla") and
+                # "war" under threat_intel (inside "malware").
+                if any(
+                    self._word_contains(t, kw_lower) or self._word_contains(kw_lower, t)
+                    for t in terms
+                ):
                     assigned = category
                     break
             self.keyword_categories[kw] = assigned
@@ -1018,7 +1033,12 @@ class InsightExtractor:
         self.thread_keywords = list(raw.get("thread_keywords", []))
         self.keyword_freq = Counter(raw.get("keyword_freq", {}))
         loaded_cats = raw.get("keyword_categories", {})
-        self.keyword_categories = {k: KeywordCategory(v) for k, v in loaded_cats.items()}
+        # State files written before the child_safety -> ai_safety rename carry the
+        # old value; remap so old state loads instead of raising ValueError.
+        legacy = {"child_safety": KeywordCategory.AI_SAFETY.value}
+        self.keyword_categories = {
+            k: KeywordCategory(legacy.get(v, v)) for k, v in loaded_cats.items()
+        }
 
         # Restore settings if present
         if "stem_mode" in raw:

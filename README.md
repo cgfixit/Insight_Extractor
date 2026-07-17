@@ -281,9 +281,9 @@ Every keyword is auto-categorised into one of:
 |----------|-------------|
 | `threat_intel` | Ransomware, malware, TTPs, CVEs, threat actors |
 | `osint` | OSINT tools, data brokers, recon techniques, PII |
-| `child_safety` | Predator tactics, grooming, CSAM-related |
+| `ai_safety` | AI safety & security — alignment, jailbreaks, prompt injection, bias |
 | `ai_infra` | LLMs, RAG, embeddings, vector DBs, AI frameworks |
-| `infosec` | General security — exploits, phishing, lateral movement |
+| `infosec` | Security operations — red teaming, incident response, SIEM/EDR, threat hunting |
 | `general` | Everything else |
 
 ### Example — regex-only (no BERT, fast)
@@ -504,7 +504,7 @@ Total tracked keywords: 79
 Results saved to: insights_extracted.md
 
 === KEYWORD STATS ===
-  Categories: {'threat_intel': 28, 'osint': 12, 'child_safety': 9, 'ai_infra': 12, 'infosec': 8, 'general': 10}
+  Categories: {'threat_intel': 28, 'osint': 12, 'ai_safety': 9, 'ai_infra': 12, 'infosec': 8, 'general': 10}
   Stem mode: stem
 ```
 
