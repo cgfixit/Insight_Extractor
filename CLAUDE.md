@@ -25,7 +25,7 @@ write code that works on both.
 | Module | Role | Imports heavy ML? |
 |---|---|---|
 | `src/insight_extractor/config.py` | `StemMode`, `KeywordCategory`, `PatternLabel` StrEnums | No — keep it that way |
-| `src/insight_extractor/constants.py` | `THREAD_SEEDS` (368 keywords), `REGEX_PATTERNS` (15 patterns) | No — keep it that way |
+| `src/insight_extractor/constants.py` | `THREAD_SEEDS` (363 keywords), `REGEX_PATTERNS` (15 patterns) | No — keep it that way |
 | `src/insight_extractor/models.py` | Pydantic v2 models: `MatchInfo`, `KeywordStats`, `SemanticHit`, `SentenceScore`, `ExtractResult` | No — keep it that way |
 | `src/insight_extractor/exceptions.py` | `InsightExtractorError` hierarchy | No — keep it that way |
 | `src/insight_extractor/utils.py` | logging, `format_timestamp`, `compute_text_hash`, filename helpers | No — keep it that way |
