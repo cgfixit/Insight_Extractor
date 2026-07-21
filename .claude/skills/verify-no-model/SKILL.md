@@ -45,7 +45,7 @@ EOF
 
 Check the output like CI's smoke test does: assert on **specific expected values**
 (e.g. a CVE id you know is in the input), not just non-emptiness. Remember
-`seed_keywords=[]` falls back to all 69 `THREAD_SEEDS` — pass a real list to control
+`seed_keywords=[]` falls back to all 363 `THREAD_SEEDS` — pass a real list to control
 the test.
 
 ## Level 2 — full pipeline with fakes (semantic paths, report, state)

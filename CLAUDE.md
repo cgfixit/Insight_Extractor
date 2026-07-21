@@ -170,14 +170,14 @@ constructor params `enable_dynamic`/`enable_semantic`, enum members
 `exceptions.details` kwarg. Nine tests failed.
 **Rule:** before asserting anything about a symbol, **open the file and read the actual
 signature/enum/model definition**. Never write a test from memory, from the README
-alone, or from what the API "should" look like. The real names are `CHILD_SAFETY` and
+alone, or from what the API "should" look like. The real names are `AI_SAFETY` and
 `AI_INFRA`; `find_matches` returns `list[MatchInfo]` (Pydantic — attribute access, not
 subscripting).
 
 ### 4.2 `seed_keywords=[]` does not mean "no keywords" (commit 9e5f8ff)
 
 **Mistake:** the smoke test called `InsightExtractor(seed_keywords=[])` expecting an
-empty bank; the constructor treats a falsy list as "use defaults" and loaded all 69
+empty bank; the constructor treats a falsy list as "use defaults" and loaded all 363
 `THREAD_SEEDS`, then crashed on a `None.pattern` access downstream.
 **Rule:** an empty list and `None` are equivalent here — both load `THREAD_SEEDS`. There
 is currently no way to construct a truly keyword-less extractor via `seed_keywords`.
@@ -361,7 +361,7 @@ opening a file — not a judgment call.
 - [ ] Model access stubbed via `_model`/`_tokenizer` injection (§4.6 pattern)
 - [ ] Filesystem via `tmp_path`/`temp_dir` fixtures only — nothing written to repo root
 - [ ] New source module ⇒ matching `tests/unit/test_<module>.py`
-- [ ] A test that contradicts actual behavior is fixed on the test side only if SPEC.md/
+- [ ] A test that contradicts actual behavior is fixed on the test side only if `docs/SPEC.md`/
       README agree the source is right — and the commit body says so
 
 ### Dependency change
@@ -394,7 +394,7 @@ opening a file — not a judgment call.
 
 **Order of truth** when sources disagree:
 1. Source code signatures/behavior (what actually runs)
-2. `SPEC.md` (intended design)
+2. `docs/SPEC.md` (intended design)
 3. `README.md` (user contract)
 4. Tests (historically the least reliable layer here — they were once written against a
    phantom API and rewritten to match src, never the other way)

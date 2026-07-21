@@ -4,11 +4,14 @@ Codex-specific onboarding for `Insight_Extractor`.
 
 ## Files
 
+- `AGENTS.md` — detailed project guidance loaded through the root `AGENTS.md` entrypoint.
 - `codex_custom_instructions.md` — review-first behavior, minimal diffs, and secret safety.
 - `ponytail-plugin.json` — existing optional Ponytail metadata.
 - `skills/` — Codex-native project workflows.
 
-`AGENTS.md` owns repository-wide rules. `CLAUDE.md` remains the detailed historical operating manual. Do not duplicate runtime architecture or dependency pins here.
+The root `AGENTS.md` is Codex's auto-discovered entrypoint and delegates here.
+`CLAUDE.md` remains the detailed historical operating manual. Do not duplicate runtime
+architecture or dependency pins here.
 
 ## Skill dispatch
 

@@ -2,7 +2,9 @@
 
 Guidance for AI coding agents working in `Insight_Extractor`.
 
-Read this file before edits. Use the source code as the behavioral authority, then `SPEC.md`, then `README.md`. The detailed operating manual is `CLAUDE.md`; the security audit is `docs/SECURITY_AUDIT.md`.
+Read this file before edits. Use the source code as the behavioral authority, then
+`docs/SPEC.md`, then `README.md`. The detailed operating manual is `CLAUDE.md`; the
+security audit is `docs/SECURITY_AUDIT.md`.
 
 ## Project
 

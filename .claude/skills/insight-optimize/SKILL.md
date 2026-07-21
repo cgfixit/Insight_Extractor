@@ -94,7 +94,7 @@ the README alone — this repo once shipped a phantom-API test suite, commit `40
    (findall returns `"4444"`, not `"port 4444"`).
 
 Known non-findings — do not report these as problems:
-- `seed_keywords=[]` loading all 69 `THREAD_SEEDS` is documented behavior (§4.2).
+- `seed_keywords=[]` loading all 363 `THREAD_SEEDS` is documented behavior (§4.2).
 - `StrEnum` keys comparing equal to plain strings in result dicts is by design (§4.14).
 - The constructor silently swallowing `ConfigLoadError` is by design (§4.12).
 - The SARIF upload failure on this private repo is expected and `continue-on-error`.
