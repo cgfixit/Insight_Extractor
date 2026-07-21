@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "ponytail",
   "version": "4.8.4",
   "description": "Lazy senior dev mode. Forces the simplest, shortest solution that actually works: YAGNI, stdlib first, no unrequested abstractions.",
@@ -16,7 +16,6 @@
     "productivity"
   ],
   "skills": "./skills/",
-  "hooks": "./hooks/claude-codex-hooks.json",
   "interface": {
     "displayName": "Ponytail",
     "shortDescription": "Lazy senior developer mode",

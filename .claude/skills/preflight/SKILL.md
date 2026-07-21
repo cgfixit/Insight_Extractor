@@ -81,7 +81,7 @@ pytest tests/unit/ -v --tb=short
   it via `extractor._model = FakeModel()` / `extractor._tokenizer = FakeTokenizer()`
   (pattern at the top of `tests/unit/test_extractor.py`).
 - Never mark a failing test skip/xfail to pass this gate. If the test asserts phantom
-  behavior, verify against the source + SPEC.md, fix the test, and say so in the commit
+  behavior, verify against the source + `docs/SPEC.md`, fix the test, and say so in the commit
   body.
 - If both 3.12 and 3.13 are available locally, run both (CI matrixes both); otherwise
   note the single version tested.

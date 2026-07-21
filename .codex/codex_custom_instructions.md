@@ -6,8 +6,9 @@
 - Never hardcode secrets; do not log secrets.
 - Use exit codes and avoid silent failure paths for scripts.
 - For nontrivial edits, include a clear PR summary with impact and residual risk.
-- Always load /ponytail and /karpathy-skills skills when using Github connector in codex)
+- Load the installed Ponytail and Karpathy guidelines skills for GitHub-connected Codex work.
 
-Ponytail plugin setup
+## Ponytail plugin setup
+
 - Optional review mode plugin source: https://github.com/DietrichGebert/ponytail
 - Use v4.8.4 metadata in `.codex/ponytail-plugin.json` when the workflow asks for leaner implementation guidance.
