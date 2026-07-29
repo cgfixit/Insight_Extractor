@@ -8,6 +8,7 @@ import re
 import warnings
 from collections import Counter
 from datetime import UTC, datetime
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,13 @@ from insight_extractor.tokenizer import SentenceTokenizer
 from insight_extractor.utils import compute_text_hash, format_timestamp
 
 logger = logging.getLogger("insight_extractor")
+
+
+# ponytail: 1,024 covers the 639 defaults; raise only if custom vocabularies churn.
+@lru_cache(maxsize=1024)
+def _compile_word_pattern(needle: str) -> re.Pattern[str]:
+    return re.compile(rf"(?<!\w){re.escape(needle)}(?!\w)")
+
 
 # ---------------------------------------------------------------------------
 # Heuristic keyword buckets for auto-categorisation
@@ -540,7 +548,7 @@ class InsightExtractor:
     @staticmethod
     def _word_contains(needle: str, haystack: str) -> bool:
         """True if *needle* occurs in *haystack* as a whole word (not a substring)."""
-        return re.search(rf"(?<!\w){re.escape(needle)}(?!\w)", haystack) is not None
+        return _compile_word_pattern(needle).search(haystack) is not None
 
     def _auto_categorize_keywords(self) -> None:
         """Heuristic categorisation of keywords into KeywordCategory buckets."""

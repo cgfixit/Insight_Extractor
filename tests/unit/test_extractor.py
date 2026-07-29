@@ -12,7 +12,7 @@ import pytest
 
 from insight_extractor.config import KeywordCategory
 from insight_extractor.exceptions import ConfigLoadError, ModelLoadError, StateLoadError
-from insight_extractor.extractor import InsightExtractor
+from insight_extractor.extractor import InsightExtractor, _compile_word_pattern
 
 
 class FakeModel:
@@ -201,6 +201,12 @@ class TestAutoCategorization:
     def test_whole_word_containment_still_matches(self, tmp_path: Path) -> None:
         extractor = InsightExtractor(seed_keywords=["confirmation bias"], output_dir=tmp_path)
         assert extractor.keyword_categories["confirmation bias"] is KeywordCategory.AI_SAFETY
+
+    def test_word_contains_reuses_compiled_pattern(self) -> None:
+        _compile_word_pattern.cache_clear()
+        assert InsightExtractor._word_contains("war", "war room")
+        assert not InsightExtractor._word_contains("war", "malware")
+        assert _compile_word_pattern.cache_info().hits == 1
 
     def test_load_state_remaps_legacy_child_safety(self, tmp_path: Path) -> None:
         state_file = tmp_path / "legacy_state.json"
