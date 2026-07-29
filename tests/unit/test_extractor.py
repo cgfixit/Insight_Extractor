@@ -82,6 +82,18 @@ def test_regex_and_dynamic_can_run_without_model(tmp_path: Path) -> None:
     assert extractor.extract_dynamic_entities(text)
 
 
+def test_regex_entities_reuse_compiled_patterns(tmp_path: Path) -> None:
+    extractor = InsightExtractor(seed_keywords=["ransomware"], output_dir=tmp_path)
+    text = "Ransomware references CVE-2026-9999."
+
+    first = extractor.extract_regex_entities(text)
+    compiled = extractor._compiled_regex_patterns
+
+    assert extractor.extract_regex_entities(text) == first
+    assert extractor._compiled_regex_patterns is compiled
+    assert compiled
+
+
 def test_keyword_positions_resolve_stemmed_matches(tmp_path: Path) -> None:
     extractor = InsightExtractor(seed_keywords=["ransomware"], output_dir=tmp_path)
 
