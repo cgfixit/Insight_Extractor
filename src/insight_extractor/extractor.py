@@ -387,6 +387,7 @@ class InsightExtractor:
         self.custom_stem_suffixes = custom_stem_suffixes
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self._compiled_regex_patterns: dict[str, re.Pattern[str]] = {}
 
         # ---- keyword bank --------------------------------------------------
         self.thread_keywords: list[str] = list(seed_keywords) if seed_keywords else []
@@ -667,7 +668,11 @@ class InsightExtractor:
         """Run static REGEX_PATTERNS against *text* and deduplicate matches."""
         results: dict[str, list[str]] = {}
         for label, pattern in REGEX_PATTERNS.items():
-            matches = re.findall(pattern, text)
+            compiled = self._compiled_regex_patterns.get(pattern)
+            if compiled is None:
+                compiled = re.compile(pattern)
+                self._compiled_regex_patterns[pattern] = compiled
+            matches = compiled.findall(text)
             # Deduplicate while preserving order
             seen: set[str] = set()
             unique: list[str] = []
