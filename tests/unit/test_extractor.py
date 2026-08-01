@@ -160,6 +160,24 @@ def test_empty_paths_return_empty_results(tmp_path: Path) -> None:
     assert extractor.load_state(tmp_path / "missing.json") is False
 
 
+def test_keyword_expansion_uses_latest_input(tmp_path: Path) -> None:
+    extractor = InsightExtractor(
+        seed_keywords=["anchor"],
+        similarity_threshold=0.0,
+        dynamic_expansion_top_n=5,
+        output_dir=tmp_path,
+    )
+    extractor._model = FakeModel()
+    legacy_text = " ".join(f"legacyterm{i}" for i in range(250))
+    for _ in range(3):
+        assert extractor.update_thread_keywords(legacy_text, auto_expand=False) == []
+
+    added = extractor.update_thread_keywords("quasar quasar photometry telescope observatory")
+
+    assert any("quasar" in keyword for keyword in added)
+    assert not any("legacyterm" in keyword for keyword in added)
+
+
 def test_model_load_failure_is_wrapped(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     def fail_load(_model_name: str) -> object:
         raise RuntimeError("boom")
