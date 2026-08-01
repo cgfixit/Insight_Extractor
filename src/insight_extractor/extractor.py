@@ -448,8 +448,6 @@ class InsightExtractor:
         # ---- embeddings -----------------------------------------------------
         self._keyword_embeddings: npt.NDArray[np.float64] | None = None
 
-        # ---- TF-IDF corpus for dynamic expansion ---------------------------
-        self._tfidf_corpus: list[str] = []
         self._auto_categorize_keywords()
 
     # ------------------------------------------------------------------
@@ -589,12 +587,10 @@ class InsightExtractor:
         auto_expand: bool = True,
     ) -> list[str]:
         """
-        Append *new_text* to the TF-IDF corpus, extract candidate keywords,
+        Use *new_text* as the TF-IDF corpus, extract candidate keywords,
         and add those that are semantically close to existing keywords.
         """
-        self._tfidf_corpus.append(new_text)
-
-        if not auto_expand or len(self._tfidf_corpus) == 0:
+        if not auto_expand:
             return []
 
         # TF-IDF candidate extraction
@@ -605,7 +601,8 @@ class InsightExtractor:
             min_df=1,
         )
         try:
-            tfidf_matrix = vectorizer.fit_transform(self._tfidf_corpus)
+            # ponytail: use a rolling window only if cross-document IDF becomes a requirement.
+            tfidf_matrix = vectorizer.fit_transform([new_text])
         except ValueError:
             return []
 
