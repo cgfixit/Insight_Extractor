@@ -220,6 +220,21 @@ class TestAutoCategorization:
         extractor = InsightExtractor(seed_keywords=["confirmation bias"], output_dir=tmp_path)
         assert extractor.keyword_categories["confirmation bias"] is KeywordCategory.AI_SAFETY
 
+    def test_unrelated_keyword_skips_boundary_regex_checks(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        def unexpected_word_contains(_needle: str, _haystack: str) -> bool:
+            pytest.fail("unrelated text should not require a boundary regex")
+
+        monkeypatch.setattr(
+            InsightExtractor,
+            "_word_contains",
+            staticmethod(unexpected_word_contains),
+        )
+        extractor = InsightExtractor(seed_keywords=["zzqvwx"], output_dir=tmp_path)
+
+        assert extractor.keyword_categories["zzqvwx"] is KeywordCategory.GENERAL
+
     def test_word_contains_reuses_compiled_pattern(self) -> None:
         _compile_word_pattern.cache_clear()
         assert InsightExtractor._word_contains("war", "war room")

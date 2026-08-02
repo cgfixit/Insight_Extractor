@@ -570,7 +570,8 @@ class InsightExtractor:
                 # "legislation" under the old safety bucket (contains "sla") and
                 # "war" under threat_intel (inside "malware").
                 if any(
-                    self._word_contains(t, kw_lower) or self._word_contains(kw_lower, t)
+                    (t in kw_lower and self._word_contains(t, kw_lower))
+                    or (kw_lower in t and self._word_contains(kw_lower, t))
                     for t in terms
                 ):
                     assigned = category
