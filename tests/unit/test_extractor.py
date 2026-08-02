@@ -13,6 +13,7 @@ import pytest
 from insight_extractor.config import KeywordCategory
 from insight_extractor.exceptions import ConfigLoadError, ModelLoadError, StateLoadError
 from insight_extractor.extractor import InsightExtractor, _compile_word_pattern
+from insight_extractor.models import ExtractResult, KeywordStats, SemanticHit, SentenceScore
 
 
 class FakeModel:
@@ -67,6 +68,46 @@ def test_full_pipeline_with_fake_model(tmp_path: Path) -> None:
     md_path = extractor.save_results_to_markdown(result)
     assert md_path.exists()
     assert "Insight Extraction Results" in md_path.read_text(encoding="utf-8")
+
+
+def test_markdown_report_preserves_and_escapes_result_text(tmp_path: Path) -> None:
+    payload = (
+        "<script>alert(1)</script>\r\n## Injected Heading\n| injected | table | row | **bold**"
+    )
+    context = f"{'c' * 121} CONTEXTTAIL {payload}"
+    sentence = f"{'s' * 201} SENTENCETAIL {payload}"
+    result = ExtractResult(
+        timestamp="2026-08-01T00:00:00Z",
+        input_hash=payload,
+        word_count=2,
+        regex_entities={payload: [payload]},
+        dynamic_keyword_matches={payload: [payload]},
+        semantic_keywords=[SemanticHit(keyword=payload, score=0.9, context=context)],
+        key_sentences=[SentenceScore(sentence=sentence, score=0.8)],
+        newly_expanded_keywords=[payload],
+        total_tracked_keywords=1,
+        keyword_stats=KeywordStats(
+            total_keywords=1,
+            total_categories=1,
+            category_counts={payload: 1},
+            top_keywords=[(payload, 2)],
+            stem_mode=payload,
+            case_sensitive=False,
+            custom_suffixes=(),
+            last_updated="2026-08-01T00:00:00Z",
+        ),
+    )
+    extractor = InsightExtractor(seed_keywords=["seed"], output_dir=tmp_path)
+
+    report = extractor.save_results_to_markdown(result).read_text(encoding="utf-8")
+
+    assert "CONTEXTTAIL" in report
+    assert "SENTENCETAIL" in report
+    assert "<script>" not in report
+    assert "&lt;script&gt;" in report
+    assert "\n## Injected Heading" not in report
+    assert "\n| injected |" not in report
+    assert "\\| injected \\| table \\| row \\|" in report
 
 
 def test_regex_and_dynamic_can_run_without_model(tmp_path: Path) -> None:
