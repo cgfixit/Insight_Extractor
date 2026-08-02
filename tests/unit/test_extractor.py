@@ -36,6 +36,19 @@ class FakeTokenizer:
         return [part.strip() for part in text.split(".") if len(part.strip()) > 10]
 
 
+class SelectiveModel:
+    def encode(
+        self,
+        texts: str | list[str],
+        *_args: Any,
+        **_kwargs: Any,
+    ) -> np.ndarray[Any, np.dtype[np.float64]]:
+        items = [texts] if isinstance(texts, str) else texts
+        return np.array(
+            [[1.0, 0.0] if item in {"anchor", "known"} else [0.0, 1.0] for item in items]
+        )
+
+
 def build_extractor(tmp_path: Path) -> InsightExtractor:
     extractor = InsightExtractor(
         seed_keywords=["ransomware", "CVE", "exploit"],
@@ -217,6 +230,28 @@ def test_keyword_expansion_uses_latest_input(tmp_path: Path) -> None:
 
     assert any("quasar" in keyword for keyword in added)
     assert not any("legacyterm" in keyword for keyword in added)
+
+
+def test_keyword_expansion_uses_one_fallback_for_a_new_domain(tmp_path: Path) -> None:
+    extractor = InsightExtractor(seed_keywords=["anchor"], output_dir=tmp_path)
+    extractor._model = SelectiveModel()
+    text = ("mycorrhizal " * 10) + "fungal ecology nutrient exchange watershed biodiversity"
+
+    added = extractor.update_thread_keywords(text)
+
+    assert added == ["mycorrhizal"]
+    assert extractor.extract_dynamic_entities(text)["DYNAMIC_KEYWORD"] == ["mycorrhizal"]
+
+
+def test_keyword_expansion_skips_fallback_when_a_known_candidate_qualifies(
+    tmp_path: Path,
+) -> None:
+    extractor = InsightExtractor(seed_keywords=["anchor", "known"], output_dir=tmp_path)
+    extractor._model = SelectiveModel()
+    text = ("known " * 10) + "mycorrhizal fungal ecology nutrient exchange"
+
+    assert extractor.update_thread_keywords(text) == []
+    assert extractor.thread_keywords == ["anchor", "known"]
 
 
 def test_model_load_failure_is_wrapped(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
