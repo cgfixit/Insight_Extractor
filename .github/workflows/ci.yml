@@ -11,6 +11,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 env:
   PYTHON_VERSION: "3.12"
   # Suppress HuggingFace/transformers progress bars and telemetry in CI
@@ -115,12 +118,11 @@ jobs:
           path: junit-unit-${{ matrix.python-version }}.xml
 
   # ---------------------------------------------------------------------------
-  # 4. Integration / smoke test — emulates script output with a generated
-  #    .txt input file (does NOT download the full BERT model; uses the
-  #    regex + keyword pipeline which has no heavy ML dependency at init time)
+  # 4. CLI smoke test — runs production orchestration against a real local file.
+  #    Only the external BERT boundary is replaced with deterministic test doubles.
   # ---------------------------------------------------------------------------
   smoke-test:
-    name: Smoke Test (script run + generated .txt input)
+    name: CLI Smoke (Python 3.12 + local .txt)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -133,14 +135,14 @@ jobs:
           cache: pip
 
       - name: Install package (runtime deps only)
-        # Install without heavy torch/transformers to keep CI fast.
-        # The smoke test exercises the regex + keyword pipeline end-to-end
-        # and confirms the CLI entry point resolves and runs without error.
         run: pip install -e .
 
-      - name: Generate synthetic threat-intel input file
+      - name: Generate isolated local text file
+        env:
+          SMOKE_DIR: ${{ runner.temp }}/insight-smoke
         run: |
-          cat > /tmp/smoke_input.txt << 'EOF'
+          mkdir -p "$SMOKE_DIR"
+          cat > "$SMOKE_DIR/local report 2026.txt" << 'EOF'
           On May 11 2026, the Nitrogen ransomware group claimed to have stolen 8 terabytes
           of data from Foxconn North American facilities in Mount Pleasant, Wisconsin.
           The group exploited CVE-2026-12345 in the Starlette ASGI framework to gain
@@ -155,81 +157,123 @@ jobs:
           CVE-2026-48710 affects millions of AI agent pipelines using LangChain and ChromaDB.
           OSINT recon via Shodan, Censys, and Google dorking revealed exposed admin panels.
           The threat actor also leveraged BERT embeddings and RAG pipelines for C2 comms.
+          Mycorrhizal mycorrhizal mycorrhizal telemetry improved the forest ecology survey.
           EOF
 
-      - name: Run insight-extractor CLI against synthetic input
-        # Patch __main__ to skip semantic (BERT) extraction in smoke mode
-        # by passing the text through the regex-only path at the Python level.
+      - name: Run production CLI orchestration and validate output
+        env:
+          HF_HUB_OFFLINE: "1"
+          SMOKE_DIR: ${{ runner.temp }}/insight-smoke
+          TRANSFORMERS_OFFLINE: "1"
         run: |
           python - << 'PYEOF'
-          import sys, pathlib, json, re
+          import contextlib
+          import io
+          import json
+          import os
+          import shutil
+          import sys
+          from pathlib import Path
 
-          # Add src to path (installed in editable mode, but be explicit)
-          sys.path.insert(0, "src")
+          import numpy as np
 
-          from insight_extractor.constants import REGEX_PATTERNS, THREAD_SEEDS
+          import insight_extractor.__main__ as cli
+          from insight_extractor.extractor import InsightExtractor
 
-          input_path = pathlib.Path("/tmp/smoke_input.txt")
-          text = input_path.read_text(encoding="utf-8")
 
-          # --- Regex pipeline (no model, no InsightExtractor instantiation) ---
-          # Run REGEX_PATTERNS directly — fully deterministic, zero dependencies.
-          regex_entities = {}
-          for label, pattern in REGEX_PATTERNS.items():
-              matches = re.findall(pattern, text, re.IGNORECASE)
-              unique = list(dict.fromkeys(
-                  (m.strip() if isinstance(m, str) else m[0].strip())
-                  for m in matches if m
-              ))
-              if unique:
-                  regex_entities[label] = unique
+          class SmokeModel:
+              def encode(self, texts, *_args, **_kwargs):
+                  items = [texts] if isinstance(texts, str) else list(texts)
+                  return np.array(
+                      [[float(index), 1.0, 0.5, 0.25] for index, _ in enumerate(items, 1)],
+                      dtype=np.float64,
+                  )
 
-          # --- Dynamic keyword scan against THREAD_SEEDS ---
-          keyword_hits = {}
-          for kw in THREAD_SEEDS:
-              pat = re.compile(re.escape(kw), re.IGNORECASE)
-              hits = pat.findall(text)
-              if hits:
-                  keyword_hits[kw] = hits[:5]
 
-          print("=== REGEX ENTITIES ===")
-          for etype, vals in regex_entities.items():
-              print(f"  {etype}: {vals}")
+          class SmokeTokenizer:
+              def tokenize_sentences(self, text, *, max_tokens=512):
+                  del max_tokens
+                  return [part.strip() for part in text.split(".") if len(part.strip()) > 10]
 
-          print("\n=== DYNAMIC KEYWORD MATCHES ===")
-          for kw, hits in list(keyword_hits.items())[:10]:
-              print(f"  {kw}: {hits[:3]}")
 
-          # --- Assertions: deterministic checks on the synthetic input ---
-          assert "CVE_ID" in regex_entities, \
-              f"CVE_ID not found. Got: {list(regex_entities.keys())}"
+          class SmokeExtractor(InsightExtractor):
+              def __init__(self, *args, **kwargs):
+                  super().__init__(*args, **kwargs)
+                  self._model = SmokeModel()
+                  self._tokenizer = SmokeTokenizer()
 
-          assert any("CVE-" in v for v in regex_entities.get("CVE_ID", [])), \
-              f"CVE_ID matches look wrong: {regex_entities.get('CVE_ID')}"
 
-          threat_kws = {kw.lower() for kw in keyword_hits}
-          assert any(t in threat_kws for t in ["nitrogen", "conti", "ransomware", "exploit"]), \
-              f"No threat keywords matched. Hits: {list(threat_kws)[:10]}"
+          assert sys.version_info[:2] == (3, 12), sys.version
+          assert shutil.which("insight-extract"), "installed console entry point is missing"
 
-          print("\n[SMOKE PASS] Regex + keyword pipeline verified successfully.")
-          print(f"  CVE IDs found: {regex_entities.get('CVE_ID', [])}")
-          print(f"  Threat keywords matched: {[k for k in threat_kws if k in {'nitrogen','conti','ransomware','exploit','malware'}]}")
+          run_dir = Path(os.environ["SMOKE_DIR"])
+          input_path = run_dir / "local report 2026.txt"
+          os.chdir(run_dir)
+          cli.InsightExtractor = SmokeExtractor
+          sys.argv = ["insight-extract", str(input_path)]
 
-          # Write a results artefact so CI can upload it
-          out = {
-              "regex_entities": regex_entities,
-              "keyword_hits": {k: v for k, v in list(keyword_hits.items())[:20]},
-          }
-          pathlib.Path("/tmp/smoke_results.json").write_text(
-              json.dumps(out, indent=2, ensure_ascii=False), encoding="utf-8"
+          captured = io.StringIO()
+          with contextlib.redirect_stdout(captured):
+              cli.main()
+          console = captured.getvalue()
+          (run_dir / "console.txt").write_text(console, encoding="utf-8")
+          print(console)
+
+          console_sections = (
+              "=== REGEX ENTITIES ===",
+              "=== DYNAMIC KEYWORD MATCHES ===",
+              "=== SEMANTIC KEYWORD HITS (top 10) ===",
+              "=== KEY SENTENCES ===",
+              "=== DYNAMIC EXPANSION:",
+              "Total tracked keywords:",
+              "=== KEYWORD STATS ===",
           )
+          report_sections = (
+              "# Insight Extraction Results",
+              "## Regex Entities",
+              "## Dynamic Keyword Matches",
+              "## Semantic Keywords",
+              "## Key Sentences",
+              "## Newly Expanded Keywords",
+              "## Keyword Statistics",
+          )
+
+          report_path = run_dir / "insights_extracted.md"
+          state_path = run_dir / "insight_extractor_state.json"
+          report = report_path.read_text(encoding="utf-8")
+          state = json.loads(state_path.read_text(encoding="utf-8"))
+
+          assert all(console.count(section) == 1 for section in console_sections), console
+          console_positions = [console.index(section) for section in console_sections]
+          assert console_positions == sorted(console_positions), console_positions
+          semantic_output = console.split(console_sections[2], 1)[1].split(console_sections[3], 1)[0]
+          assert semantic_output.count("\n  [") == 10, semantic_output
+          positions = [report.index(section) for section in report_sections]
+          assert positions == sorted(positions), positions
+          semantic_report = report.split(report_sections[3], 1)[1].split(report_sections[4], 1)[0]
+          assert semantic_report.count("\n| ") > 11, semantic_report
+          assert "CVE-2026-12345" in console and "CVE\\-2026\\-12345" in report
+          assert "192.168.1.254" in console and "192\\.168\\.1\\.254" in report
+          assert "ransom@darkmail.onion" in console and "ransom@darkmail\\.onion" in report
+          assert "| Keyword | Score | Context |" in report
+          assert "| Score | Sentence |" in report
+          assert "Results saved to: insights_extracted.md" in console
+          assert state["version"] == 1
+          assert any("mycorrhizal" in keyword.lower() for keyword in state["thread_keywords"])
+
+          print("[SMOKE PASS] Python 3.12 real-file CLI output is structured and complete.")
+          print(f"  Console lines: {len(console.splitlines())}")
+          print(f"  Markdown lines: {len(report.splitlines())}")
+          print(f"  Tracked keywords: {len(state['thread_keywords'])}")
           PYEOF
 
-      - name: Upload smoke test results artefact
+      - name: Upload user-visible smoke output
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: smoke-test-results
-          path: /tmp/smoke_results.json
+          name: cli-smoke-output
+          path: ${{ runner.temp }}/insight-smoke
+          if-no-files-found: error
 
   # ---------------------------------------------------------------------------
   # 5. Integration tests  (optional — heavy; skipped unless manually triggered
