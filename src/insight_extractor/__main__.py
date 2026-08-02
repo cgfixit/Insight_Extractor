@@ -42,13 +42,15 @@ def main() -> None:
         print(f"  {etype}: {vals[:10]}{' ...' if len(vals) > 10 else ''}")
 
     print("\n=== SEMANTIC KEYWORD HITS (top 10) ===")
-    for hit in results.semantic_keywords:
+    for hit in results.semantic_keywords[:10]:
+        context = " ".join(hit.context.split())
         print(f"  [{hit.score:.3f}] {hit.keyword}")
-        print(f"           ...{hit.context[:80]}...")
+        print(f"           ...{context[:80]}...")
 
     print("\n=== KEY SENTENCES ===")
     for s in results.key_sentences:
-        print(f"  [{s.score:.3f}] {s.sentence[:120]}")
+        sentence = " ".join(s.sentence.split())
+        print(f"  [{s.score:.3f}] {sentence[:120]}")
 
     print(f"\n=== DYNAMIC EXPANSION: +{len(results.newly_expanded_keywords)} new keywords ===")
     if results.newly_expanded_keywords:
