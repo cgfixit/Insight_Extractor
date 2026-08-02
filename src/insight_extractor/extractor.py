@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import re
@@ -32,6 +33,14 @@ from insight_extractor.tokenizer import SentenceTokenizer
 from insight_extractor.utils import compute_text_hash, format_timestamp
 
 logger = logging.getLogger("insight_extractor")
+
+_MARKDOWN_SPECIAL = re.compile(r"[\\`*_{}\[\]()#+\-.!|>]")
+
+
+def _markdown_text(value: str) -> str:
+    """Return all of *value* as one escaped Markdown-safe line."""
+    text = html.escape(" ".join(value.splitlines()), quote=False)
+    return _MARKDOWN_SPECIAL.sub(r"\\\g<0>", text)
 
 
 # ponytail: 1,024 covers the 639 defaults; raise only if custom vocabularies churn.
@@ -915,8 +924,8 @@ class InsightExtractor:
 
         lines: list[str] = [
             "# Insight Extraction Results\n",
-            f"**Generated:** {ts}",
-            f"**Input Hash:** {result.input_hash}",
+            f"**Generated:** {_markdown_text(ts)}",
+            f"**Input Hash:** {_markdown_text(result.input_hash)}",
             f"**Word Count:** {result.word_count}",
             f"**Total Tracked Keywords:** {result.total_tracked_keywords}",
             "\n---\n",
@@ -926,9 +935,9 @@ class InsightExtractor:
         lines.append("## Regex Entities\n")
         if result.regex_entities:
             for entity_type, matches in result.regex_entities.items():
-                lines.append(f"### {entity_type}\n")
+                lines.append(f"### {_markdown_text(entity_type)}\n")
                 for m in matches:
-                    lines.append(f"- {m}")
+                    lines.append(f"- {_markdown_text(m)}")
                 lines.append("")
         else:
             lines.append("*No regex entities found.*\n")
@@ -937,9 +946,9 @@ class InsightExtractor:
         lines.append("## Dynamic Keyword Matches\n")
         if result.dynamic_keyword_matches:
             for entity_type, matches in result.dynamic_keyword_matches.items():
-                lines.append(f"### {entity_type}\n")
+                lines.append(f"### {_markdown_text(entity_type)}\n")
                 for m in matches:
-                    lines.append(f"- {m}")
+                    lines.append(f"- {_markdown_text(m)}")
                 lines.append("")
         else:
             lines.append("*No dynamic keyword matches found.*\n")
@@ -950,8 +959,9 @@ class InsightExtractor:
         lines.append("|---------|-------|---------|")
         if result.semantic_keywords:
             for hit in result.semantic_keywords:
-                ctx = hit.context[:120].replace("|", "\\|")
-                lines.append(f"| {hit.keyword} | {hit.score:.4f} | {ctx} |")
+                keyword = _markdown_text(hit.keyword)
+                context = _markdown_text(hit.context)
+                lines.append(f"| {keyword} | {hit.score:.4f} | {context} |")
         else:
             lines.append("| — | — | — |")
         lines.append("")
@@ -962,8 +972,8 @@ class InsightExtractor:
         lines.append("|-------|----------|")
         if result.key_sentences:
             for s in result.key_sentences:
-                sent = s.sentence[:200].replace("|", "\\|")
-                lines.append(f"| {s.score:.4f} | {sent} |")
+                sentence = _markdown_text(s.sentence)
+                lines.append(f"| {s.score:.4f} | {sentence} |")
         else:
             lines.append("| — | — |")
         lines.append("")
@@ -971,7 +981,7 @@ class InsightExtractor:
         # Newly Expanded Keywords
         lines.append("## Newly Expanded Keywords\n")
         if result.newly_expanded_keywords:
-            lines.append(", ".join(result.newly_expanded_keywords))
+            lines.append(", ".join(map(_markdown_text, result.newly_expanded_keywords)))
         else:
             lines.append("*No new keywords expanded.*")
         lines.append("")
@@ -980,9 +990,10 @@ class InsightExtractor:
         stats = result.keyword_stats
         lines.append("## Keyword Statistics\n")
         lines.append(f"- **Total Keywords:** {stats.total_keywords}")
-        lines.append(f"- **Categories:** {json.dumps(stats.category_counts)}")
-        lines.append(f"- **Top Keywords:** {stats.top_keywords}")
-        lines.append(f"- **Stem Mode:** {stats.stem_mode}")
+        categories = _markdown_text(json.dumps(stats.category_counts, ensure_ascii=False))
+        lines.append(f"- **Categories:** {categories}")
+        lines.append(f"- **Top Keywords:** {_markdown_text(str(stats.top_keywords))}")
+        lines.append(f"- **Stem Mode:** {_markdown_text(stats.stem_mode)}")
         lines.append(f"- **Case Sensitive:** {stats.case_sensitive}")
 
         md_path.write_text("\n".join(lines), encoding="utf-8")
