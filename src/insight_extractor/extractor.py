@@ -597,8 +597,8 @@ class InsightExtractor:
         auto_expand: bool = True,
     ) -> list[str]:
         """
-        Use *new_text* as the TF-IDF corpus, extract candidate keywords,
-        and add those that are semantically close to existing keywords.
+        Use *new_text* as the TF-IDF corpus and add semantically close keywords,
+        or one top-ranked unseen candidate when no semantic candidate qualifies.
         """
         if not auto_expand:
             return []
@@ -662,11 +662,23 @@ class InsightExtractor:
         max_sims = similarities.max(axis=1)
 
         newly_added = []
+        semantic_candidate_qualified = False
         for cand, sim in zip(candidates, max_sims, strict=False):
-            if sim >= self.similarity_threshold and cand not in self.thread_keywords:
-                self.thread_keywords.append(cand)
-                self.keyword_freq[cand] += 1
-                newly_added.append(cand)
+            if sim >= self.similarity_threshold:
+                semantic_candidate_qualified = True
+                if cand not in self.thread_keywords:
+                    self.thread_keywords.append(cand)
+                    self.keyword_freq[cand] += 1
+                    newly_added.append(cand)
+
+        # ponytail: one TF-IDF fallback bounds drift while allowing cross-domain inputs.
+        if not semantic_candidate_qualified:
+            for cand in candidates:
+                if cand not in self.thread_keywords:
+                    self.thread_keywords.append(cand)
+                    self.keyword_freq[cand] += 1
+                    newly_added.append(cand)
+                    break
 
         if newly_added:
             self.stemmer.set_keywords(self.thread_keywords)
