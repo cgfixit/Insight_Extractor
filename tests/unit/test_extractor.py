@@ -10,7 +10,8 @@ from typing import Any
 import numpy as np
 import pytest
 
-from insight_extractor.config import KeywordCategory
+import insight_extractor.__main__ as cli
+from insight_extractor.config import KeywordCategory, StemMode
 from insight_extractor.exceptions import ConfigLoadError, ModelLoadError, StateLoadError
 from insight_extractor.extractor import InsightExtractor, _compile_word_pattern
 from insight_extractor.models import ExtractResult, KeywordStats, SemanticHit, SentenceScore
@@ -169,7 +170,9 @@ def test_config_loads_supported_formats(tmp_path: Path) -> None:
 
     yaml_file = tmp_path / "config.yaml"
     yaml_file.write_text("seed_keywords:\n  - yamlkw\nstem_mode: exact\n")
-    assert "yamlkw" in InsightExtractor(config_path=yaml_file).thread_keywords
+    yaml_extractor = InsightExtractor(config_path=yaml_file)
+    assert "yamlkw" in yaml_extractor.thread_keywords
+    assert yaml_extractor.keyword_freq["yamlkw"] == 1
 
     json_file = tmp_path / "config.json"
     json_file.write_text(json.dumps({"seed_keywords": ["jsonkw"]}))
@@ -202,6 +205,50 @@ def test_state_roundtrip_and_bad_state(tmp_path: Path) -> None:
     bad_state.write_text("{not json")
     with pytest.raises(StateLoadError):
         restored.load_state(bad_state)
+
+
+def test_load_state_restores_runtime_settings_lazily(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    state_file = tmp_path / "state.json"
+    state_file.write_text(
+        json.dumps(
+            {
+                "thread_keywords": ["ransomware"],
+                "keyword_freq": {"ransomware": 2},
+                "keyword_categories": {"ransomware": "threat_intel"},
+                "stem_mode": "exact",
+                "similarity_threshold": 0.12,
+                "model_name": "sentence-transformers/alternate-mini",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    def unexpected_model_load(_model_name: str) -> object:
+        raise AssertionError("load_state should not load the model eagerly")
+
+    monkeypatch.setattr("insight_extractor.extractor.SentenceTransformer", unexpected_model_load)
+    restored = InsightExtractor(
+        model_name="sentence-transformers/original-mini",
+        seed_keywords=[],
+        output_dir=tmp_path,
+    )
+    restored._model = FakeModel()
+    restored._tokenizer = FakeTokenizer()
+
+    assert restored.load_state(state_file) is True
+    assert restored.model_name == "sentence-transformers/alternate-mini"
+    assert restored.stem_mode is StemMode.EXACT
+    assert restored.stemmer.stem_mode is StemMode.EXACT
+    assert restored._model is None
+    assert restored._tokenizer is None
+    assert restored._keyword_embeddings is None
+
+    restored._model = FakeModel()
+    restored._tokenizer = FakeTokenizer()
+    assert restored.extract_dynamic_entities("ransomware")["DYNAMIC_KEYWORD"] == ["ransomware"]
+    assert restored.extract_semantic_keywords("ransomware incident response details")
 
 
 def test_empty_paths_return_empty_results(tmp_path: Path) -> None:
@@ -263,6 +310,16 @@ def test_model_load_failure_is_wrapped(monkeypatch: pytest.MonkeyPatch, tmp_path
 
     with pytest.raises(ModelLoadError):
         _ = extractor.model
+
+
+def test_cli_reports_missing_input_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
+) -> None:
+    missing = tmp_path / "missing.txt"
+    monkeypatch.chdir(tmp_path)
+
+    assert cli.main([str(missing)]) == 1
+    assert "failed to read input file" in capsys.readouterr().err
 
 
 class TestAutoCategorization:

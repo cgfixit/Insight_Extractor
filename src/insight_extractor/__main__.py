@@ -3,21 +3,15 @@
 from __future__ import annotations
 
 import sys
+from argparse import ArgumentParser
+from collections.abc import Sequence
 from pathlib import Path
 
+from insight_extractor.exceptions import ModelLoadError, StateLoadError
 from insight_extractor.extractor import InsightExtractor
 from insight_extractor.utils import setup_logging
 
-
-def main() -> None:
-    setup_logging()
-    extractor = InsightExtractor()
-    extractor.load_state()
-
-    if len(sys.argv) > 1:
-        text = Path(sys.argv[1]).read_text(encoding="utf-8")
-    else:
-        text = """
+SAMPLE_TEXT = """
         On May 11 2026, the Nitrogen ransomware group claimed to have stolen 8 terabytes
         of data from Foxconn North American facilities including Mount Pleasant Wisconsin.
         The group used leaked Conti 2 builder code targeting VMware ESXi environments.
@@ -31,7 +25,38 @@ def main() -> None:
         CVE-2026-48710 affects the Starlette framework used in millions of AI agent pipelines.
         """
 
-    results = extractor.extract(text)
+
+def _build_parser() -> ArgumentParser:
+    parser = ArgumentParser(description="Extract insights from a UTF-8 text file.")
+    parser.add_argument("input_path", nargs="?", type=Path, help="UTF-8 text file to analyze")
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = _build_parser().parse_args(list(argv) if argv is not None else None)
+    setup_logging()
+    extractor = InsightExtractor()
+    state_path = Path("insight_extractor_state.json")
+    try:
+        extractor.load_state(state_path)
+    except StateLoadError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    if args.input_path is not None:
+        try:
+            text = args.input_path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as exc:
+            print(f"error: failed to read input file '{args.input_path}': {exc}", file=sys.stderr)
+            return 1
+    else:
+        text = SAMPLE_TEXT
+
+    try:
+        results = extractor.extract(text)
+    except ModelLoadError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
     print("\n=== REGEX ENTITIES ===")
     for etype, vals in results.regex_entities.items():
@@ -66,8 +91,9 @@ def main() -> None:
     print(f"  Categories: {stats.category_counts}")
     print(f"  Stem mode: {stats.stem_mode}")
 
-    extractor.save_state()
+    extractor.save_state(state_path)
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

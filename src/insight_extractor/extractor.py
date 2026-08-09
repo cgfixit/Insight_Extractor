@@ -428,27 +428,8 @@ class InsightExtractor:
             except ConfigLoadError:
                 logger.warning("Failed to load config; using defaults.")
 
-        # ---- stemmer + pattern registry ------------------------------------
-        if self.custom_stem_suffixes is not None:
-            self.stemmer = DynamicKeywordStemmer(
-                stem_mode=self.stem_mode,
-                case_sensitive=False,
-                custom_suffixes=self.custom_stem_suffixes,
-            )
-        else:
-            self.stemmer = DynamicKeywordStemmer(
-                stem_mode=self.stem_mode,
-                case_sensitive=False,
-            )
-        if self.thread_keywords:
-            self.stemmer.set_keywords(self.thread_keywords)
-
-        self.pattern_registry = KeywordPatternRegistry(
-            static_patterns=REGEX_PATTERNS,
-            stemmer=self.stemmer,
-        )
-        if self.thread_keywords:
-            self.pattern_registry.regenerate_dynamic_patterns(self.thread_keywords)
+        self.keyword_freq = Counter(self.thread_keywords)
+        self._reset_keyword_runtime()
 
         # ---- tokenizer + model placeholders --------------------------------
         self._tokenizer: SentenceTokenizer | None = None
@@ -456,6 +437,7 @@ class InsightExtractor:
 
         # ---- embeddings -----------------------------------------------------
         self._keyword_embeddings: npt.NDArray[np.float64] | None = None
+        self._keyword_embeddings_dirty = False
 
         self._auto_categorize_keywords()
 
@@ -512,6 +494,29 @@ class InsightExtractor:
     # ------------------------------------------------------------------
     # Lazy model loading
     # ------------------------------------------------------------------
+    def _reset_keyword_runtime(self) -> None:
+        """Rebuild the stemmer and dynamic-regex runtime from current settings."""
+        if self.custom_stem_suffixes is not None:
+            self.stemmer = DynamicKeywordStemmer(
+                stem_mode=self.stem_mode,
+                case_sensitive=False,
+                custom_suffixes=self.custom_stem_suffixes,
+            )
+        else:
+            self.stemmer = DynamicKeywordStemmer(
+                stem_mode=self.stem_mode,
+                case_sensitive=False,
+            )
+        if self.thread_keywords:
+            self.stemmer.set_keywords(self.thread_keywords)
+
+        self.pattern_registry = KeywordPatternRegistry(
+            static_patterns=REGEX_PATTERNS,
+            stemmer=self.stemmer,
+        )
+        if self.thread_keywords:
+            self.pattern_registry.regenerate_dynamic_patterns(self.thread_keywords)
+
     @property
     def model(self) -> SentenceTransformer:
         """Lazy-load the sentence-transformers model."""
@@ -538,6 +543,7 @@ class InsightExtractor:
         """Encode all thread keywords with the model and L2-normalise."""
         if not self.thread_keywords:
             self._keyword_embeddings = None
+            self._keyword_embeddings_dirty = False
             return
         embeddings = self.model.encode(
             self.thread_keywords,
@@ -548,6 +554,7 @@ class InsightExtractor:
         norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
         norms[norms == 0] = 1.0
         self._keyword_embeddings = embeddings / norms
+        self._keyword_embeddings_dirty = False
 
     # ------------------------------------------------------------------
     # Auto-categorisation
@@ -740,6 +747,12 @@ class InsightExtractor:
         Split *text* into sentences/chunks, embed them, and find keyword
         hits via cosine similarity against keyword embeddings.
         """
+        if (
+            self.thread_keywords
+            and self._keyword_embeddings is None
+            and self._keyword_embeddings_dirty
+        ):
+            self._recompute_keyword_embeddings()
         if not self.thread_keywords or self._keyword_embeddings is None:
             return []
 
@@ -792,6 +805,12 @@ class InsightExtractor:
         Split *text* into sentences, score each by max cosine similarity
         to keyword embeddings, and return the top *top_n*.
         """
+        if (
+            self.thread_keywords
+            and self._keyword_embeddings is None
+            and self._keyword_embeddings_dirty
+        ):
+            self._recompute_keyword_embeddings()
         if not self.thread_keywords or self._keyword_embeddings is None:
             return []
 
@@ -1079,12 +1098,15 @@ class InsightExtractor:
             self.stem_mode = StemMode(raw["stem_mode"])
         if "similarity_threshold" in raw:
             self.similarity_threshold = float(raw["similarity_threshold"])
+        if "model_name" in raw and raw["model_name"] != self.model_name:
+            self.model_name = str(raw["model_name"])
+            self._model = None
+            self._tokenizer = None
 
-        # Re-sync stemmer and registry
-        if self.thread_keywords:
-            self.stemmer.set_keywords(self.thread_keywords)
-            self.pattern_registry.regenerate_dynamic_patterns(self.thread_keywords)
-            self._recompute_keyword_embeddings()
+        self._keyword_embeddings = None
+        self._keyword_embeddings_dirty = bool(self.thread_keywords)
+        self._reset_keyword_runtime()
+        self._auto_categorize_keywords()
 
         logger.info("State loaded from %s (%d keywords)", p, len(self.thread_keywords))
         return True
