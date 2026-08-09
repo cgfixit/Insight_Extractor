@@ -279,6 +279,15 @@ def test_keyword_expansion_uses_latest_input(tmp_path: Path) -> None:
     assert not any("legacyterm" in keyword for keyword in added)
 
 
+def test_keyword_expansion_preserves_tfidf_tie_order(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr("insight_extractor.extractor.THREAD_SEEDS", [])
+    extractor = InsightExtractor(seed_keywords=[], dynamic_expansion_top_n=1, output_dir=tmp_path)
+
+    assert extractor.update_thread_keywords("theta zeta") == ["zeta"]
+
+
 def test_keyword_expansion_uses_one_fallback_for_a_new_domain(tmp_path: Path) -> None:
     extractor = InsightExtractor(seed_keywords=["anchor"], output_dir=tmp_path)
     extractor._model = SelectiveModel()

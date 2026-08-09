@@ -627,9 +627,8 @@ class InsightExtractor:
         if tfidf_matrix.shape[0] == 0 or len(feature_names) == 0:
             return []
 
-        # Scores from the latest (most recent) document
-        latest_row = tfidf_matrix[-1]
-        scores = latest_row.toarray().flatten()
+        # There is one document, so avoid an extra sparse-row slice and copy.
+        scores = tfidf_matrix.toarray().ravel()
         top_indices = np.argsort(scores)[::-1][: self.dynamic_expansion_top_n]
         candidates = [feature_names[i] for i in top_indices if scores[i] > 0]
 
