@@ -284,8 +284,8 @@ class TestResolveSourceKeywordLookup:
         assert stemmer._resolve_source_keyword("phishing") == "phishing"
 
     def test_substring_fallback_still_works(self, stemmer: DynamicKeywordStemmer) -> None:
-        stemmer.set_keywords(["ransomware"])
-        assert stemmer._resolve_source_keyword("ransomwares") == "ransomware"
+        stemmer.set_keywords(["Ransomware"])
+        assert stemmer._resolve_source_keyword("ransomwares") == "Ransomware"
 
 
 class TestRepr:

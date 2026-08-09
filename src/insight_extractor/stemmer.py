@@ -491,9 +491,8 @@ class DynamicKeywordStemmer:
         if exact is not None:
             return exact
 
-        # Fuzzy fallback: check containment in either direction
-        for kw in self._keywords:
-            kw_lower = kw.lower()
+        # Fuzzy fallback: reuse the ordered lowercase lookup to avoid re-lowering each keyword.
+        for kw_lower, kw in self._get_keyword_lookup().items():
             if kw_lower in matched_lower or matched_lower in kw_lower:
                 return kw
 
