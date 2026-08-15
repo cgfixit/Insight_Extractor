@@ -118,6 +118,13 @@ identify `CVE-2026-4372`'s affected component and reachability verdict, and conf
 whether the `PYSEC-*` IDs are duplicates of the already-documented `CVE-2025-149xx`
 series or net-new.
 
+**2026-08-15 re-check:** re-ran `pip-audit` against a clean constraints-pinned install
+(`transformers==4.53.0`) as part of a dependency-consistency verification pass. Same
+`PYSEC-2025-211`..`218` and `PYSEC-2026-2288`/`2289` findings as above, plus one net-new
+advisory not previously listed here: **`PYSEC-2026-2290`** (fixed in `5.5.0`), not yet
+triaged. Rolled into the same dedicated `transformers` CVE re-triage noted above — no
+verdict assigned, no pin changed.
+
 ---
 
 ## SAST Findings (bandit)

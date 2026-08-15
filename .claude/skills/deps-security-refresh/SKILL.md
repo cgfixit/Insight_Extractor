@@ -70,10 +70,14 @@ If the environment allows a model download, also instantiate
 actual crash site. If not possible, say so in the report (skips are reported, never
 hidden).
 
-Known failure this check catches (verified 2026-07, Linux/py3.12): the current
-constraints set `transformers==4.53.0` + `accelerate==0.34.2` fails at import with
-`ImportError: cannot import name 'TorchTensorParallelPlugin'` — transformers 4.53's
-trainer needs `accelerate>=1.3.0`. CI masks it by installing without constraints.
+Known failure this check catches (fixed 2026-07-08 in commit 312096b — verify it stays
+fixed on every bump): `constraints.txt` previously pinned `transformers==4.53.0` +
+`accelerate==0.34.2`, which fails at import with `ImportError: cannot import name
+'TorchTensorParallelPlugin'` — transformers 4.53's trainer needs `accelerate>=1.3.0`.
+`constraints.txt` now pins `accelerate==1.14.0`. CI never caught this because it
+installs without constraints (`pip install -e ".[dev]"`), so a constraints-pinned
+install is the only thing that exercises this triangle — re-run this check after any
+accelerate/transformers/sentence-transformers bump.
 
 ## Step 4 — Scan
 
