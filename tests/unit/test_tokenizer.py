@@ -15,14 +15,15 @@ class FakeTokenizer:
         return list(range(len(text.split())))
 
     def decode(self, tokens: list[int], *, skip_special_tokens: bool = True) -> str:
-        del skip_special_tokens
+        del add_special_tokens
         return " ".join(f"tok{i}" for i in tokens)
 
 
 def test_lazy_root_imports() -> None:
     assert insight_extractor.DynamicKeywordStemmer is DynamicKeywordStemmer
+    missing = "MissingThing"
     with pytest.raises(AttributeError):
-        getattr(insight_extractor, "MissingThing")
+        getattr(insight_extractor, missing)
 
 
 def test_count_tokens_uses_loaded_tokenizer() -> None:
