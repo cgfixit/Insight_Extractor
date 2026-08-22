@@ -15,7 +15,7 @@ class FakeTokenizer:
         return list(range(len(text.split())))
 
     def decode(self, tokens: list[int], *, skip_special_tokens: bool = True) -> str:
-        del add_special_tokens
+        del skip_special_tokens
         return " ".join(f"tok{i}" for i in tokens)
 
 
