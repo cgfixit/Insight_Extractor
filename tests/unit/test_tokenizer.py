@@ -21,8 +21,9 @@ class FakeTokenizer:
 
 def test_lazy_root_imports() -> None:
     assert insight_extractor.DynamicKeywordStemmer is DynamicKeywordStemmer
+    missing = "MissingThing"
     with pytest.raises(AttributeError):
-        getattr(insight_extractor, "MissingThing")
+        getattr(insight_extractor, missing)
 
 
 def test_count_tokens_uses_loaded_tokenizer() -> None:
