@@ -1,0 +1,4 @@
+interface:
+  display_name: "Insight State Contract"
+  short_description: "Check state rollback and lazy model restoration"
+  default_prompt: "Use $insight-state-contract to verify state validation, failure atomicity and lazy restoration."

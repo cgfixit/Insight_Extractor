@@ -1,0 +1,4 @@
+interface:
+  display_name: "Insight Tokenizer Check"
+  short_description: "Check chunk termination, overlap and token coverage"
+  default_prompt: "Use $insight-tokenizer-check to check tokenizer termination and token coverage without downloading models."

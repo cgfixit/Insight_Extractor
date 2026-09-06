@@ -40,6 +40,13 @@ not proof that a plugin or hooks are installed.
 
 The skills reuse the existing `.claude/skills/` checklists where those are more detailed. The Codex versions are the entrypoints and add Windows-friendly commands plus explicit stop conditions.
 
+## Focused verification skills
+
+- `insight-tokenizer-check`: bounded checks for chunking hangs, invalid budgets, overlap, token coverage, and lazy imports.
+- `insight-state-contract`: state round trips, malformed schemas, failure atomicity, legacy categories, paths, and lazy model restoration.
+
+These two skills are self-contained under `.agents/skills/`; they diagnose by default and implement fixes when requested. Invoke them with `$insight-tokenizer-check` or `$insight-state-contract`, or select them through `/skills` where supported. Personal copies can also be installed under `~/.codex/skills`; keep them synchronized with these repository versions. Same-name personal and repository skills are not merged.
+
 ## Safe defaults
 
 - Keep model loading lazy.

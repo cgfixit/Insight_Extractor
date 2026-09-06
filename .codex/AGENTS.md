@@ -80,5 +80,7 @@ Read `.codex/README.md` and `.codex/codex_custom_instructions.md`, then use the 
 - `insight-verify-no-model` — validate pipeline changes without downloading BERT;
 - `insight-add-entity-pattern` — add a static regex entity end to end;
 - `insight-optimize` — measured, minimal optimization of a real hot path.
+- `insight-tokenizer-check` — bounded chunking, overlap, token coverage, and lazy-loading checks;
+- `insight-state-contract` — malformed state, rollback, path semantics, and lazy restoration.
 
 For fuller implementation checklists, consult the matching file under `.claude/skills/`.
