@@ -13,12 +13,15 @@ Run from the repository root in PowerShell:
 python -m ruff check src/ tests/
 python -m ruff format --check src/ tests/
 python -m mypy src/insight_extractor
+$env:HF_HUB_OFFLINE = "1"
+$env:TRANSFORMERS_OFFLINE = "1"
+$env:HF_HUB_DISABLE_TELEMETRY = "1"
 python -m pytest tests/unit/ -v --tb=short
 git diff --check
 git status --short
 ```
 
-For changes to `config.py`, `constants.py`, packaging, or import boundaries, also run the model-free smoke check from the detailed checklist. Do not run the CLI from the repository root because it writes `insights_extracted.md` and `insight_extractor_state.json`.
+For changes to `config.py`, `constants.py`, packaging, or import boundaries, also run the lightweight import check from the detailed checklist. That check is not the full CI smoke: inspect the `smoke-test` job in `.github/workflows/ci.yml`, which runs production CLI orchestration with fake model/tokenizer boundaries and verifies the report and state. Do not run the CLI from the repository root because it writes `insights_extracted.md` and `insight_extractor_state.json`.
 
 Before staging, reject generated artifacts:
 

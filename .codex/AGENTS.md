@@ -20,10 +20,11 @@ Important paths:
 
 - `src/insight_extractor/` — package code;
 - `tests/unit/` — model-free unit tests;
-- `tests/integration/` — real-model tests;
+- `tests/integration/` — optional legacy tests; inspect mocks and API compatibility before running;
 - `.github/workflows/ci.yml` — required lint, type, unit, and smoke gates;
 - `requirements.txt`, `constraints.txt`, `pyproject.toml` — dependency declarations and pins;
-- `.codex/` — Codex instructions and project skills;
+- `.codex/` — Codex instructions and workflow references;
+- `.agents/skills/` — discoverable, repository-specific skill entrypoints;
 - `.claude/skills/` — existing detailed implementation checklists.
 
 ## Setup and validation
@@ -32,7 +33,7 @@ Use a Python 3.12+ virtual environment when possible:
 
 ```powershell
 python -m pip install -r requirements.txt -c constraints.txt
-python -m pip install -e ".[dev]"
+python -m pip install -e ".[dev]" -c constraints.txt
 ```
 
 Required gates:
@@ -44,7 +45,13 @@ python -m mypy src/insight_extractor
 python -m pytest tests/unit/ -v --tb=short
 ```
 
-The CI smoke path must remain model-free. Real BERT downloads belong only to `tests/integration/`, manual workflow dispatch, or commits containing `[run-integration]`.
+The CI smoke path uses fake BERT boundaries and production CLI orchestration.
+Optional integration CI runs on workflow dispatch or a qualifying push head commit
+containing `[run-integration]`; a PR commit message alone does not enable it.
+The current integration files contain stale mocks/API calls and do not establish
+real-model compatibility. Run with offline guards during diagnosis and report failures.
+
+Historical manual corrections: the live constraints already include the accelerate compatibility fix; `load_state()` invalidates embeddings lazily rather than recomputing them. Check current source and manifests before following historical sequences in `CLAUDE.md`.
 
 ## Non-negotiable invariants
 
@@ -69,9 +76,9 @@ The CI smoke path must remain model-free. Real BERT downloads belong only to `te
 
 Read `.codex/README.md` and `.codex/codex_custom_instructions.md`, then use the relevant skill:
 
-- `preflight` — before commit/push;
-- `verify-no-model` — validate pipeline changes without downloading BERT;
-- `add-entity-pattern` — add a static regex entity end to end;
-- `optimize` — measured, minimal optimization of a real hot path.
+- `insight-preflight` — before commit/push;
+- `insight-verify-no-model` — validate pipeline changes without downloading BERT;
+- `insight-add-entity-pattern` — add a static regex entity end to end;
+- `insight-optimize` — measured, minimal optimization of a real hot path.
 
 For fuller implementation checklists, consult the matching file under `.claude/skills/`.

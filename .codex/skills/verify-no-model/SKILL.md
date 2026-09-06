@@ -11,7 +11,9 @@ Rules:
 
 - Run from a disposable directory, never the repository root.
 - Regex and dynamic keyword paths must not access `.model` or `.tokenizer`.
-- For full-pipeline tests, inject `extractor._model` and `extractor._tokenizer` before calling `extract()` or `load_state()`.
+- `load_state()` must stay model-free; when a saved model name changes it clears both cached model and tokenizer. For subsequent full-pipeline checks, inject fake `_model` and `_tokenizer` after loading state.
+- Model-free means no model download, not no ML dependencies: importing `extractor.py` imports `sentence_transformers`.
+- Set `HF_HUB_OFFLINE=1` and `TRANSFORMERS_OFFLINE=1` for offline verification.
 - Do not use `seed_keywords=[]` to mean “no keywords”; the implementation treats falsy input as the default seed bank.
 - Assert concrete values such as a known CVE, IP, or entity, not merely non-empty output.
 - Confirm the Markdown report and JSON state round-trip in the disposable directory, then confirm the repository has no generated artifacts.
@@ -29,4 +31,4 @@ try {
 }
 ```
 
-Escalate to `tests/integration/` only when changing model loading, real tokenization, embedding behavior, dependency compatibility, or model-path error handling. Use `[run-integration]` or workflow dispatch for that gate, and report it explicitly if skipped.
+Escalate to `tests/integration/` only when changing model loading, real tokenization, embedding behavior, dependency compatibility, or model-path error handling. Inspect the optional suite for stale mocks before relying on it. Workflow dispatch enables its CI job; `[run-integration]` only works on qualifying push head commits, not ordinary PR events. Report failures or skipped model verification explicitly.

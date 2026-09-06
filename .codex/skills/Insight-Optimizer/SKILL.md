@@ -1,5 +1,5 @@
 ---
-name: optimize
+name: insight-optimizer
 description: Make 1-3 measured, minimal optimization to Insight_Extractor's regex, dynamic-stemmer, state, or keyword-expansion paths without changing public behavior or lazy model loading.
 ---
 
@@ -8,7 +8,7 @@ description: Make 1-3 measured, minimal optimization to Insight_Extractor's rege
 This is a measured optimization workflow, not a broad refactor.  
 Target repo: `CGFixIT/Insight_Extractor` (Python 3.12+, Pydantic v2, lazy SentenceTransformer).  
 Source of truth order: live source → `CLAUDE.md` → `docs/SPEC.md` → `README.md`.  
-Always start from `main`. Trace every caller of a shared helper before touching it.
+Start a new change from current `origin/main` on a `codex/` branch; preserve an existing task branch. Trace every caller of a shared helper before touching it.
 
 ## Hard Constraints (never violate)
 
@@ -18,7 +18,7 @@ Always start from `main`. Trace every caller of a shared helper before touching 
 - Do **not** remove or weaken lazy model loading (`model` / `tokenizer` properties).
 - Do **not** break exact match order, deduplication, span fidelity, or exception paths.
 - Preserve the keyword-mutation sequence after any change:
-  `stemmer.set_keywords(...)` → `registry.regenerate_dynamic_patterns(...)` → `_recompute_keyword_embeddings()` → `_auto_categorize_keywords()`.
+  Follow the current mutation path in `update_thread_keywords`; `load_state` rebuilds regex runtime and marks embeddings dirty without loading a model. Do not make state loading eager.
 - Line length ≤ 100. Prefer `pathlib.Path` + `encoding="utf-8"`. No f-strings in log calls.
 - Use `# ponytail:` comments for deliberate ceilings.
 
@@ -94,3 +94,4 @@ Do not manufacture a cache, configuration knob, or “money-mode” behavior to 
 
 # ponytail: TfidfVectorizer rebuilt every update_thread_keywords call;
 #           rolling corpus only after multi-document expansion is measured
+```

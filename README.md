@@ -338,7 +338,7 @@ Insight_Extractor/
 ├── requirements.txt            # Runtime deps with transformers compatibility note
 ├── constraints.txt             # Pinned known-good versions
 ├── README.md                   # This file
-├── SPEC.md                     # Full technical specification
+├── docs/SPEC.md                # Technical design reference; source is behavioral authority
 ├── src/
 │   └── insight_extractor/
 │       ├── __init__.py         # Package entry point with lazy imports
@@ -365,6 +365,12 @@ Insight_Extractor/
 ```
 
 ---
+
+## Codex setup
+
+Start at [AGENTS.md](AGENTS.md) and [the Codex workflow map](.codex/README.md).
+Repository skills are discoverable under `.agents/skills/` with `insight-` names.
+See [the setup review](docs/CODEX_SETUP_REVIEW.md) for verified scope and follow-ups.
 
 ## Development Setup
 
