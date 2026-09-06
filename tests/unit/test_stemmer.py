@@ -7,9 +7,36 @@ import re
 import pytest
 
 from insight_extractor.config import StemMode
-from insight_extractor.stemmer import DynamicKeywordStemmer, KeywordPatternRegistry
+from insight_extractor.stemmer import (
+    ChunkedKeywordPattern,
+    DynamicKeywordStemmer,
+    KeywordPatternRegistry,
+)
 
 # ── DynamicKeywordStemmer tests ──────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("text", ["", "no matches", "alpha beta alpha"])
+def test_chunked_finditer_preserves_span_order_and_tie_priority(text: str) -> None:
+    patterns = [
+        re.compile(pattern) for pattern in ("alpha beta", "alpha", "(?:alpha)", "(?=alpha)")
+    ]
+    matches = list(ChunkedKeywordPattern(patterns).finditer(text))
+
+    expected = (
+        [
+            ((0, 0), "", "(?=alpha)"),
+            ((0, 5), "alpha", "alpha"),
+            ((0, 5), "alpha", "(?:alpha)"),
+            ((0, 10), "alpha beta", "alpha beta"),
+            ((11, 11), "", "(?=alpha)"),
+            ((11, 16), "alpha", "alpha"),
+            ((11, 16), "alpha", "(?:alpha)"),
+        ]
+        if text == "alpha beta alpha"
+        else []
+    )
+    assert [(match.span(), match.group(), match.re.pattern) for match in matches] == expected
 
 
 class TestInit:

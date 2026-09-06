@@ -35,7 +35,8 @@ class ChunkedKeywordPattern:
         matches: list[re.Match[str]] = []
         for pattern in self.patterns:
             matches.extend(pattern.finditer(text))
-        yield from sorted(matches, key=lambda match: (match.start(), match.end()))
+        matches.sort(key=lambda match: (match.start(), match.end()))
+        yield from matches
 
 
 type KeywordPattern = re.Pattern[str] | ChunkedKeywordPattern
