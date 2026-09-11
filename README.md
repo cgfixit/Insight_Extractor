@@ -1,9 +1,6 @@
 # Insight_Extractor
 
-
-**BERT + regex insight extractor with dynamic keyword stemmer.**
-
-`insight-extractor` is a Python 3.12+ library that combines transformer-based semantic search with high-performance regex pattern matching to extract structured insights from unstructured text. Designed for threat-intelligence, OSINT, and security-focused NLP pipelines.
+Python 3.12+ library that combines transformer-based semantic search with high-performance regex pattern matching to extract structured insights from unstructured text. Designed for threat-intelligence, OSINT, and security-focused NLP pipelines.
 
 ## Features
 
