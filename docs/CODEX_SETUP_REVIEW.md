@@ -3,6 +3,12 @@
 Reviewed 2026-09-06 against origin/main at
 `8097406` (before this documentation-only setup change).
 
+**2026-09-12 addendum:** a later docs-only sync updated README/SPEC/SECURITY_AUDIT
+install, stemmer-mode, layout, and unit-vs-integration CI copy. Finding 4's README
+bullets (Porter/lemmatization, Windows-only install, missing LICENSE) are resolved.
+Finding 2 (stale integration `AutoTokenizer` mocks) is now documented as the real
+optional-CI story; the test files were not changed.
+
 ## Architecture and scope
 
 The packaged application is `src/insight_extractor`, installed with hatchling and

@@ -197,11 +197,11 @@ SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", revision="c9b44c9"
 
 ## Remediation Commands
 
-```cmd
-:: Apply all fixes at once
-pip install -r requirements.txt -c constraints.txt
-pip install -e .
+```bash
+# Apply all fixes at once (Linux / macOS / Windows)
+python -m pip install -r requirements.txt -c constraints.txt
+python -m pip install -e .
 
-:: Verify clean
+# Verify clean
 pip-audit -r requirements.txt
 ```
