@@ -276,13 +276,14 @@ jobs:
           if-no-files-found: error
 
   # ---------------------------------------------------------------------------
-  # 5. Integration tests  (optional — heavy; skipped unless manually triggered
-  #    or on a schedule, to avoid downloading BERT weights on every push)
+  # 5. Integration tests  (optional orchestration suite; skipped unless manually
+  #    triggered or [run-integration] appears in the push head commit message.
+  #    Uses injected fake model/tokenizer boundaries — no BERT download.)
   # ---------------------------------------------------------------------------
   integration-tests:
-    name: Integration Tests (full BERT pipeline)
+    name: Integration Tests (orchestration, offline ML doubles)
     runs-on: ubuntu-latest
-    # Run on manual dispatch, schedule, or when [run-integration] in commit msg
+    # Run on manual dispatch or when [run-integration] in push head commit msg
     if: |
       github.event_name == 'workflow_dispatch' ||
       contains(github.event.head_commit.message, '[run-integration]')
@@ -299,14 +300,10 @@ jobs:
       - name: Install package + dev deps
         run: pip install -e ".[dev]"
 
-      - name: Cache HuggingFace model weights
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/huggingface
-          key: hf-models-all-MiniLM-L6-v2-${{ runner.os }}
-          restore-keys: hf-models-
-
       - name: Run integration tests
+        env:
+          HF_HUB_OFFLINE: "1"
+          TRANSFORMERS_OFFLINE: "1"
         run: |
           pytest tests/integration/ \
             -v \
