@@ -4,14 +4,29 @@
 Refactored BERT + regex insight extractor as a modern Python 3.12+ package with Pydantic models, proper sentence tokenization, and comprehensive tests.
 
 ## Python Version
-Python 3.12+
+Python 3.12+ (`requires-python = ">=3.12"`). CI unit-tests 3.12 and 3.13.
+
+## Install and CLI
+
+Live install contract (not the historical `pyproject.toml` sketch later in this file):
+
+```bash
+python -m pip install -r requirements.txt -c constraints.txt
+python -m pip install -e .
+# optional: python -m pip install -e ".[dev]" -c constraints.txt
+```
+
+CLI: `python -m insight_extractor [file.txt]` (also the `insight-extract` console script).
+Writes `insights_extracted.md` and `insight_extractor_state.json` in the current working
+directory.
 
 ## Project Structure
 ```
-insight_extractor/
+Insight_Extractor/
 ├── pyproject.toml
 ├── requirements.txt
 ├── constraints.txt
+├── LICENSE
 ├── README.md
 ├── src/
 │   └── insight_extractor/
@@ -24,17 +39,20 @@ insight_extractor/
 │       ├── tokenizer.py     # SentenceTokenizer using model tokenizer
 │       ├── extractor.py     # InsightExtractor (main class)
 │       ├── exceptions.py    # Custom exceptions
-│       └── utils.py         # Logging setup, helpers
+│       ├── utils.py         # Logging setup, helpers
+│       └── py.typed
 └── tests/
     ├── __init__.py
     ├── conftest.py
-    ├── unit/
+    ├── unit/                # Required CI — model-free
     │   ├── __init__.py
     │   ├── test_stemmer.py
     │   ├── test_models.py
     │   ├── test_tokenizer.py
-    │   └── test_exceptions.py
-    └── integration/
+    │   ├── test_exceptions.py
+    │   ├── test_extractor.py
+    │   └── test_utils.py
+    └── integration/         # Optional CI — not a required gate
         ├── __init__.py
         ├── test_extractor.py
         └── test_e2e.py
@@ -372,6 +390,10 @@ __all__ = [
 
 ## pyproject.toml
 
+The live pin set is `requirements.txt` + `constraints.txt` + the `[project]` table in
+the repo-root `pyproject.toml` (`accelerate>=1.3.0`, `transformers>=4.53.0,<5.0.0`).
+The block below is a historical design sketch and is **not** the current pin set.
+
 ```toml
 [build-system]
 requires = ["hatchling"]
@@ -431,6 +453,17 @@ addopts = "-v --tb=short"
 
 ## Test Requirements
 
+Required CI (every push/PR): `ruff check`, `ruff format --check`, `mypy` (strict),
+`pytest tests/unit/` on Python 3.12 and 3.13, plus a CLI smoke job that uses fake BERT
+boundaries. `tests/unit/` must not download models.
+
+Optional integration CI (`pytest tests/integration/`) runs only on `workflow_dispatch`
+or a qualifying **push** commit message containing `[run-integration]`. A PR commit
+message alone does not enable it. The current integration files use stale mocks
+(including patching `AutoTokenizer` at a `TYPE_CHECKING`-only import) and do not
+certify the real-model path. Required CI passing does not mean this suite passes on
+`main`.
+
 ### conftest.py
 - Fixtures for `InsightExtractor`, `DynamicKeywordStemmer`, `SentenceTokenizer`
 - Fixtures for sample texts, tmp directories
@@ -453,7 +486,7 @@ addopts = "-v --tb=short"
 - Test text chunking with various sizes
 - Test chunking with overlap
 
-### test_extractor.py (integration)
+### test_extractor.py (unit — inject fake `_model` / `_tokenizer`)
 - Test extract() returns ExtractResult
 - Test regex entity extraction
 - Test semantic keyword matching
@@ -462,7 +495,7 @@ addopts = "-v --tb=short"
 - Test state save/load round-trip
 - Test markdown output generation
 
-### test_e2e.py
-- Full pipeline with sample text
-- Verify all output fields present
-- Verify markdown file written correctly
+### test_extractor.py / test_e2e.py (integration — optional, not a required gate)
+- Intended: full pipeline / real-model checks
+- Current files: stale mocks and constructor flags; do not treat a green required
+  CI run as evidence this suite passed

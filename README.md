@@ -4,7 +4,7 @@ Python 3.12+ library combining semantic search with high-performance regex patte
 
 ## Features
 
-- **Dynamic Keyword Stemmer** — Configurable stemming (Porter, lemmatization, prefix, suffix, fuzzy, or raw regex) with automatic pattern generation for large keyword lists.
+- **Dynamic Keyword Stemmer** — Configurable matching (exact, suffix-expansion STEM, prefix, suffix, fuzzy substring, or raw regex) with automatic pattern generation for large keyword lists.
 - **BERT Semantic Scoring** — Sentence-level relevance scoring using `sentence-transformers` (`all-MiniLM-L6-v2` by default).
 - **Regex Pattern Extraction** — Pre-built patterns for CVE IDs, SHA256/MD5 hashes, IP addresses, crypto wallets, onion domains, email addresses, Telegram handles, ransom amounts, file extensions, data sizes, ports, years, and percentages.
 - **Dynamic Keyword Expansion** — TF-IDF + cosine similarity automatically grows the keyword bank from input text.
@@ -16,41 +16,40 @@ Python 3.12+ library combining semantic search with high-performance regex patte
 
 ## Requirements
 
-- **Python 3.12 or newer**
+- **Python 3.12 or newer** (CI unit-tests 3.12 and 3.13)
 - CPU-only inference supported (no GPU required)
 
 ---
 
 ## Installation
 
-### Step 1 — Clone or unzip the project
+Linux, macOS, and Windows are first-class. From the repository root, in a virtual
+environment:
 
-```cmd
-cd C:\Users\YourName\Downloads
-:: unzip Insight_Extractor.zip here, then:
-cd Insight_Extractor
-```
-
-### Step 2 — (Recommended) Create a virtual environment
-
-```cmd
+```bash
 python -m venv .venv
-.venv\Scripts\activate
+# Linux / macOS:
+source .venv/bin/activate
+# Windows (cmd): .venv\Scripts\activate
+# Windows (PowerShell): .venv\Scripts\Activate.ps1
 ```
 
-### Step 3 — Install with pinned dependencies (most reliable)
+Pinned install (recommended — matches `requirements.txt` + `constraints.txt`):
 
-```cmd
-pip install -r requirements.txt -c constraints.txt
-pip install -e .
+```bash
+python -m pip install -r requirements.txt -c constraints.txt
+python -m pip install -e .
 ```
 
-This installs the known-good pinned versions from `constraints.txt`, avoiding the `transformers` compatibility issue described below.
+This installs the known-good pinned versions from `constraints.txt`, avoiding the
+`transformers` / `accelerate` compatibility issues described below.
 
-### Alternative (Lighter version in this repo) — install dev dependencies too
+Development extras (ruff, mypy, pytest). CI's lint/type/unit jobs run
+`pip install -e ".[dev]"` without `-c constraints.txt`; keep the constraints file
+for a fully pinned local setup:
 
-```cmd
-pip install -e ".[dev]"
+```bash
+python -m pip install -e ".[dev]" -c constraints.txt
 ```
 
 ---
@@ -60,10 +59,10 @@ pip install -e ".[dev]"
 **Cause:** `sentence-transformers` model loading needs `init_empty_weights` from the
 `accelerate` package. If `accelerate` isn't installed at all, this error appears.
 
-**Fix — run this in cmd then retry:**
+**Fix:**
 
-```cmd
-pip install "accelerate>=1.3.0"
+```bash
+python -m pip install "accelerate>=1.3.0"
 ```
 
 This project's `requirements.txt` and `constraints.txt` already include `accelerate`
@@ -77,28 +76,36 @@ to prevent this on fresh installs.
 import time — as soon as anything imports `sentence_transformers` — not just on model
 load.
 
-**Fix — run this in cmd then retry:**
+**Fix:**
 
-```cmd
-pip install "accelerate>=1.3.0" --upgrade
+```bash
+python -m pip install "accelerate>=1.3.0" --upgrade
 ```
 
 `requirements.txt` and `constraints.txt` pin `accelerate>=1.3.0` (currently `1.14.0`
-in `constraints.txt`) to prevent this on fresh installs.
+in `constraints.txt`) to prevent this on fresh installs. The live pin set is already
+compatible; this error only appears with an older `accelerate` left over from a
+previous install.
 
 ---
 
 ## Running the Extractor
 
+CLI entry point: `python -m insight_extractor [file.txt]`. The same function is also
+installed as the `insight-extract` console script. Outputs
+(`insights_extracted.md`, `insight_extractor_state.json`) are written to the
+**current working directory** (or `output_dir` via the API). An existing state file
+in that directory is reloaded on the next run.
+
 ### Basic usage — pass a text file
 
-```cmd
+```bash
 python -m insight_extractor my_report.txt
 ```
 
 ### Run with no file (uses built-in demo text)
 
-```cmd
+```bash
 python -m insight_extractor
 ```
 
@@ -188,7 +195,7 @@ extractor = InsightExtractor(
     # Optional YAML/TOML/JSON config file with seed_keywords, threshold, stem_mode
     config_path=None,
 
-    # Seed keywords — defaults to THREAD_SEEDS from constants.py if None
+    # Seed keywords — omitted or empty both load THREAD_SEEDS from constants.py
     seed_keywords=["ransomware", "CVE", "OSINT"],
 
     # Max results returned by extract_key_sentences()
@@ -219,11 +226,11 @@ extractor = InsightExtractor(
 | Mode | Behavior |
 |------|----------|
 | `EXACT` | Match keyword exactly as given, case-insensitive |
-| `STEM` | Porter-stemmed root + common suffix variations (default) |
+| `STEM` | Keyword plus optional known suffixes at word boundaries (default) |
 | `PREFIX` | Match any word starting with the keyword |
 | `SUFFIX` | Match any word ending with the keyword |
-| `FUZZY` | Approximate matching with character-level tolerance |
-| `REGEX` | Treat keyword as a raw regex pattern |
+| `FUZZY` | Substring match: any word containing the keyword |
+| `REGEX` | Treat keyword as a raw regex pattern (unescaped — caller owns validity) |
 
 ### Extraction methods
 
@@ -286,10 +293,12 @@ Every keyword is auto-categorised into one of:
 ### Example — regex-only (no BERT, fast)
 
 ```python
+from pathlib import Path
+
 from insight_extractor.extractor import InsightExtractor
 
-extractor = InsightExtractor(seed_keywords=[], enable_dynamic_regex=False)
-hits = extractor.extract_regex_entities(open("report.txt").read())
+extractor = InsightExtractor(enable_dynamic_regex=False)
+hits = extractor.extract_regex_entities(Path("report.txt").read_text(encoding="utf-8"))
 for label, matches in hits.items():
     print(f"{label}: {matches}")
 ```
@@ -297,13 +306,18 @@ for label, matches in hits.items():
 ### Example — custom keywords + lower threshold
 
 ```python
+from pathlib import Path
+
+from insight_extractor.config import StemMode
+from insight_extractor.extractor import InsightExtractor
+
 extractor = InsightExtractor(
     seed_keywords=["lockbit", "clop", "medusa", "akira"],
     similarity_threshold=0.30,   # more hits, lower precision
     stem_mode=StemMode.PREFIX,
-    output_dir="C:/results",
+    output_dir="results",
 )
-result = extractor.extract(open("intel_report.txt").read())
+result = extractor.extract(Path("intel_report.txt").read_text(encoding="utf-8"))
 extractor.save_results_to_markdown(result, filename="lockbit_report.md")
 ```
 
@@ -317,7 +331,7 @@ stemmer.set_keywords(THREAD_SEEDS)
 
 matches = stemmer.find_matches("ALPHV ransomware exploited CVE-2024-1234 via lateral movement.")
 for m in matches:
-    print(f"  {m.keyword!r} -> span={m.start}-{m.end}, score={m.score:.3f}")
+    print(f"  {m.keyword!r} -> span={m.start}-{m.end}, stemmed={m.stemmed}")
 ```
 
 ---
@@ -328,35 +342,37 @@ for m in matches:
 Insight_Extractor/
 ├── .github/
 │   └── workflows/
-│       ├── ci.yml              # Lint, typecheck, unit tests, smoke test (Python 3.12+)
+│       ├── ci.yml              # Required: lint, mypy, unit (3.12/3.13), CLI smoke
 │       └── gitleaks.yml        # Secret scanning on push/PR
-├── .gitignore                  # ML weights, venvs, outputs, caches excluded
-├── pyproject.toml              # PEP 621 project metadata + tool config
-├── requirements.txt            # Runtime deps with transformers compatibility note
+├── LICENSE                     # MIT
+├── pyproject.toml              # PEP 621 metadata + tool config (requires-python >=3.12)
+├── requirements.txt            # Runtime deps (accelerate>=1.3.0, transformers>=4.53.0)
 ├── constraints.txt             # Pinned known-good versions
 ├── README.md                   # This file
 ├── docs/SPEC.md                # Technical design reference; source is behavioral authority
 ├── src/
 │   └── insight_extractor/
 │       ├── __init__.py         # Package entry point with lazy imports
-│       ├── __main__.py         # CLI entry point (python -m insight_extractor)
+│       ├── __main__.py         # CLI: python -m insight_extractor [file.txt]
 │       ├── config.py           # Enums: StemMode, KeywordCategory, PatternLabel
-│       ├── constants.py        # THREAD_SEEDS keyword bank, REGEX_PATTERNS dict
+│       ├── constants.py        # THREAD_SEEDS (363 keywords), REGEX_PATTERNS (15)
 │       ├── exceptions.py       # Custom exception hierarchy
 │       ├── models.py           # Pydantic v2 models (ExtractResult, SemanticHit, ...)
 │       ├── stemmer.py          # DynamicKeywordStemmer, KeywordPatternRegistry
 │       ├── extractor.py        # InsightExtractor orchestrator (main engine)
-│       ├── tokenizer.py        # SentenceTokenizer (BERT-aware chunking)
+│       ├── tokenizer.py        # SentenceTokenizer (lazy AutoTokenizer)
 │       ├── utils.py            # Logging, hashing, timestamp helpers
 │       └── py.typed            # PEP 561 typed package marker
 └── tests/
     ├── conftest.py             # Shared pytest fixtures
-    ├── unit/                   # Fast tests — no model download
+    ├── unit/                   # Required CI — model-free (inject fakes for BERT)
     │   ├── test_exceptions.py
+    │   ├── test_extractor.py
     │   ├── test_models.py
     │   ├── test_stemmer.py
+    │   ├── test_tokenizer.py
     │   └── test_utils.py
-    └── integration/            # Full pipeline tests — requires BERT model
+    └── integration/            # Optional / not a required CI gate — see Testing
         ├── test_extractor.py
         └── test_e2e.py
 ```
@@ -369,29 +385,34 @@ Start at [AGENTS.md](AGENTS.md) and [the Codex workflow map](.codex/README.md).
 Repository skills are discoverable under `.agents/skills/` with `insight-` names.
 See [the setup review](docs/CODEX_SETUP_REVIEW.md) for verified scope and follow-ups.
 
-## Development Setup
+## Testing
 
-```cmd
-:: Install with dev dependencies
-pip install -e ".[dev]"
+Required CI (`ci-pass` in `.github/workflows/ci.yml`) on every push/PR:
 
-:: Run unit tests only (no model download)
-pytest tests/unit/ -v
+1. `ruff check` + `ruff format --check`
+2. `mypy src/insight_extractor` (strict)
+3. `pytest tests/unit/` on Python **3.12 and 3.13** (no network, no model download)
+4. CLI smoke job — production `python -m insight_extractor` orchestration with fake
+   BERT boundaries (`HF_HUB_OFFLINE=1`); asserts the `insight-extract` script exists
 
-:: Run all tests
-pytest
+Optional integration CI (`pytest tests/integration/`) runs only on `workflow_dispatch`
+or when a **push head-commit** message contains `[run-integration]`. A pull-request
+commit message alone does **not** enable that job. Those files currently patch
+`insight_extractor.tokenizer.AutoTokenizer` (imported only under `TYPE_CHECKING`) and
+use stale constructor flags; they do **not** establish real-model compatibility and
+are not expected to pass on `main`. Required CI going green does not certify this
+suite.
 
-:: With coverage
-pytest --cov=insight_extractor --cov-report=term-missing
+```bash
+# Required local gates (same as CI, minus the smoke job)
+python -m pip install -e ".[dev]" -c constraints.txt
+python -m ruff check src/ tests/
+python -m ruff format --check src/ tests/
+python -m mypy src/insight_extractor
+python -m pytest tests/unit/ -v --tb=short
 
-:: Lint
-ruff check src/ tests/
-
-:: Format
-ruff format src/ tests/
-
-:: Type check
-mypy src/insight_extractor
+# Coverage (unit only)
+python -m pytest tests/unit/ --cov=insight_extractor --cov-report=term-missing
 ```
 
 ---
@@ -402,7 +423,7 @@ mypy src/insight_extractor
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| Constructor | `DynamicKeywordStemmer(stem_mode, case_sensitive, custom_suffixes)` | Create stemmer instance |
+| Constructor | `DynamicKeywordStemmer(*, stem_mode, case_sensitive, custom_suffixes)` | Keyword-only constructor |
 | `generate_pattern` | `(keyword, mode=None) -> str` | Regex pattern for one keyword |
 | `generate_stem_variations` | `(keyword) -> list[str]` | All stemmed forms |
 | `compile_keywords` | `(keywords) -> KeywordPattern` | One logical pattern, chunked internally for large keyword banks |
@@ -430,7 +451,7 @@ mypy src/insight_extractor
 The following shows actual pipeline output when run against an AI safety research corpus
 (`src/sample_input.txt` — 19,248 words, 441 extracted insights, sourced from cgfixit.com RAG DB).
 
-```
+```bash
 python -m insight_extractor src/sample_input.txt
 ```
 
