@@ -397,11 +397,11 @@ Required CI (`ci-pass` in `.github/workflows/ci.yml`) on every push/PR:
 
 Optional integration CI (`pytest tests/integration/`) runs only on `workflow_dispatch`
 or when a **push head-commit** message contains `[run-integration]`. A pull-request
-commit message alone does **not** enable that job. Those files currently patch
-`insight_extractor.tokenizer.AutoTokenizer` (imported only under `TYPE_CHECKING`) and
-use stale constructor flags; they do **not** establish real-model compatibility and
-are not expected to pass on `main`. Required CI going green does not certify this
-suite.
+commit message alone does **not** enable that job. The suite exercises full
+extractor orchestration against the live public API with injected fake
+model/tokenizer boundaries (no HuggingFace download). It does **not** certify
+real BERT weight compatibility; required CI going green still does not imply a
+live-model run.
 
 ```bash
 # Required local gates (same as CI, minus the smoke job)

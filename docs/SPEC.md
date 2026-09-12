@@ -459,10 +459,9 @@ boundaries. `tests/unit/` must not download models.
 
 Optional integration CI (`pytest tests/integration/`) runs only on `workflow_dispatch`
 or a qualifying **push** commit message containing `[run-integration]`. A PR commit
-message alone does not enable it. The current integration files use stale mocks
-(including patching `AutoTokenizer` at a `TYPE_CHECKING`-only import) and do not
-certify the real-model path. Required CI passing does not mean this suite passes on
-`main`.
+message alone does not enable it. The suite covers full extractor orchestration
+against the live public API with injected fake model/tokenizer boundaries and does
+not download BERT weights. Required CI passing still does not imply a live-model run.
 
 ### conftest.py
 - Fixtures for `InsightExtractor`, `DynamicKeywordStemmer`, `SentenceTokenizer`
@@ -496,6 +495,6 @@ certify the real-model path. Required CI passing does not mean this suite passes
 - Test markdown output generation
 
 ### test_extractor.py / test_e2e.py (integration — optional, not a required gate)
-- Intended: full pipeline / real-model checks
-- Current files: stale mocks and constructor flags; do not treat a green required
-  CI run as evidence this suite passed
+- Full-pipeline orchestration against live `ExtractResult` / constructor APIs
+- Inject fake `_model` / `_tokenizer` (no network, no weight download)
+- Does not certify real BERT inference; keep true weight checks separate if needed

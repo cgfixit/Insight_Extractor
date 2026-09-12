@@ -20,7 +20,7 @@ Important paths:
 
 - `src/insight_extractor/` — package code;
 - `tests/unit/` — model-free unit tests;
-- `tests/integration/` — optional legacy tests; inspect mocks and API compatibility before running;
+- `tests/integration/` — optional orchestration tests with injected fake ML boundaries;
 - `.github/workflows/ci.yml` — required lint, type, unit, and smoke gates;
 - `requirements.txt`, `constraints.txt`, `pyproject.toml` — dependency declarations and pins;
 - `.codex/` — Codex instructions and workflow references;
@@ -48,8 +48,8 @@ python -m pytest tests/unit/ -v --tb=short
 The CI smoke path uses fake BERT boundaries and production CLI orchestration.
 Optional integration CI runs on workflow dispatch or a qualifying push head commit
 containing `[run-integration]`; a PR commit message alone does not enable it.
-The current integration files contain stale mocks/API calls and do not establish
-real-model compatibility. Run with offline guards during diagnosis and report failures.
+Those tests inject fake model/tokenizer objects and exercise the live public API
+without downloading BERT weights.
 
 Historical manual corrections: the live constraints already include the accelerate compatibility fix; `load_state()` invalidates embeddings lazily rather than recomputing them. Check current source and manifests before following historical sequences in `CLAUDE.md`.
 
