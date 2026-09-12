@@ -80,10 +80,10 @@ Notes:
 - `mypy` runs in `strict = true` mode. There is no lenient fallback.
 - Line length is **100** (`[tool.ruff] line-length = 100`), not 88 or 120.
 - Enabled ruff rule families: E, F, I, N, W, UP, B, C4, SIM.
-- Integration tests (`tests/integration/`) download the real BERT model. CI runs them
+- Integration tests (`tests/integration/`) exercise full extractor orchestration with
+  injected fake model/tokenizer boundaries (no weight download). CI runs them
   **only** on `workflow_dispatch` or when the commit message contains
-  `[run-integration]`. Do not run them casually; do not move model-dependent tests
-  into `tests/unit/`.
+  `[run-integration]`. Do not move network/model-dependent checks into `tests/unit/`.
 
 ### Running the CLI
 
@@ -230,9 +230,10 @@ extractor._model = FakeModel()          # .encode() -> deterministic np.ndarray
 extractor._tokenizer = FakeTokenizer()  # .tokenize_sentences() -> list[str]
 ```
 
-Anything that genuinely needs the real model goes in `tests/integration/` and runs via
-`[run-integration]`. Constructing `InsightExtractor` or `SentenceTokenizer` is safe in
-unit tests (loading is lazy); *touching* `.model`/`.tokenizer` properties is not.
+Anything that genuinely needs the real model should stay out of required CI and use an
+explicit live-weight harness if added later. Constructing `InsightExtractor` or
+`SentenceTokenizer` is safe in unit/integration tests (loading is lazy); *touching*
+`.model`/`.tokenizer` properties without injection is not.
 
 ### 4.7 `\b` word-boundary regex traps (commit c3fef9b)
 
