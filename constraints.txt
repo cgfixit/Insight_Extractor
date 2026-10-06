@@ -25,7 +25,7 @@
 # inference path used by this project (all-MiniLM-L6-v2 via from_pretrained).
 # Risk verdict: UNREACHABLE for this project's use case.
 
-sentence-transformers==3.4.1
+sentence-transformers==5.6.0
 scikit-learn==1.6.1
 pyyaml==6.0.2
 pydantic==2.11.0
