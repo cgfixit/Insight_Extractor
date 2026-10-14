@@ -1,147 +1,133 @@
 # Insight_Extractor
 
-Python 3.12+ library combining semantic search with high-performance regex pattern matching to extract structured insights from unstructured text. Designed for threat-intelligence, OSINT, and security-focused NLP pipelines.
+Turn a wall of threat-intel, OSINT, or security text into structured, typed insights in one
+call. `insight-extractor` is a Python 3.12+ library that layers three complementary
+pipelines over a single input:
 
-## Features
+1. **Regex entity extraction** — 15 pre-built IOC patterns (CVEs, hashes, IPs, wallets,
+   `.onion` domains, ports, …). No model required.
+2. **Dynamic keyword matching** — a 363-term seed bank with configurable stemming
+   (exact, suffix-expansion, prefix, suffix, fuzzy, raw regex), compiled into chunked
+   patterns that scale to thousands of keywords.
+3. **BERT semantic scoring** — sentence-level relevance via `sentence-transformers`
+   (`all-MiniLM-L6-v2` by default), plus TF-IDF-driven keyword expansion that grows the
+   bank from what it reads.
 
-- **Dynamic Keyword Stemmer** — Configurable matching (exact, suffix-expansion STEM, prefix, suffix, fuzzy substring, or raw regex) with automatic pattern generation for large keyword lists.
-- **BERT Semantic Scoring** — Sentence-level relevance scoring using `sentence-transformers` (`all-MiniLM-L6-v2` by default).
-- **Regex Pattern Extraction** — Pre-built patterns for CVE IDs, SHA256/MD5 hashes, IP addresses, crypto wallets, onion domains, email addresses, Telegram handles, ransom amounts, file extensions, data sizes, ports, years, and percentages.
-- **Dynamic Keyword Expansion** — TF-IDF + cosine similarity automatically grows the keyword bank from input text.
-- **State Persistence** — Keyword bank, frequencies, and categories saved to JSON between runs.
-- **Lazy Model Loading** — BERT model only loads when semantic extraction is triggered; regex/keyword pipeline runs without it.
-- **Pydantic v2 Models** — Type-safe, validated output schemas throughout.
+Results are Pydantic v2 models. The CLI also writes a Markdown report and a JSON state file
+that carries the learned keyword bank into the next run; API callers get the same files by
+calling `save_results_to_markdown()` and `save_state()`.
+
+## Why use it
+
+- **Triage faster.** One `extract()` call surfaces IOCs, matched tradecraft terms, the
+  most relevant sentences, and newly discovered vocabulary from a report, paste, or
+  transcript.
+- **Pay for ML only when you use it.** The BERT model and tokenizer load lazily on first
+  semantic call. Regex and keyword pipelines run with no model, no network, and no GPU.
+- **Learns your beat.** Keyword expansion plus persisted state means the bank adapts to
+  the actors, tools, and jargon that recur in your feeds.
+- **Typed end to end.** `mypy --strict` clean, PEP 561 `py.typed`, Pydantic schemas for
+  every result.
+
+### Use cases
+
+| Scenario | What you get |
+|----------|--------------|
+| Ransomware leak-site / breach write-ups | CVEs, wallets, ransom amounts, data volumes, `.onion` links, actor handles |
+| OSINT dossiers and investigation notes | Emails, domains, IPs, Telegram handles, recon-tool mentions |
+| AI-safety / AI-security research corpora | Semantic hits on alignment, prompt-injection, RAG, and agentic-risk vocabulary |
+| SOC / IR runbooks and incident timelines | Key sentences ranked by relevance to your seed terms, keyword frequency stats |
+| Feeding a RAG or knowledge base | Deterministic JSON/Markdown output keyed by stable `PatternLabel` names |
 
 ---
 
-## Requirements
+## Quick start
 
-- **Python 3.12 or newer** (CI unit-tests 3.12 and 3.13)
-- CPU-only inference supported (no GPU required)
-
----
-
-## Installation
-
-Linux, macOS, and Windows are first-class. From the repository root, in a virtual
-environment:
+Requires **Python 3.12 or newer** (CI tests 3.12 and 3.13). CPU-only inference works.
 
 ```bash
 python -m venv .venv
-# Linux / macOS:
 source .venv/bin/activate
-# Windows (cmd): .venv\Scripts\activate
-# Windows (PowerShell): .venv\Scripts\Activate.ps1
-```
-
-Pinned install (recommended — matches `requirements.txt` + `constraints.txt`):
-
-```bash
 python -m pip install -r requirements.txt -c constraints.txt
 python -m pip install -e .
 ```
 
-This installs the known-good pinned versions from `constraints.txt`, avoiding the
-`transformers` / `accelerate` compatibility issues described below.
+On Windows, replace the activation line with `.venv\Scripts\activate` (cmd) or
+`.venv\Scripts\Activate.ps1` (PowerShell).
 
-Development extras (ruff, mypy, pytest). CI's lint/type/unit jobs run
-`pip install -e ".[dev]"` without `-c constraints.txt`; keep the constraints file
-for a fully pinned local setup:
+Run the CLI on a file, or with no argument to use the built-in demo text (ransomware,
+OSINT, CVE, and AI-pipeline content — a good end-to-end install check):
+
+```bash
+python -m insight_extractor my_report.txt     # also installed as `insight-extract`
+python -m insight_extractor                   # demo text
+```
+
+Or from Python:
+
+```python
+from pathlib import Path
+
+from insight_extractor import InsightExtractor
+
+extractor = InsightExtractor(output_dir="results")
+result = extractor.extract(Path("my_report.txt").read_text(encoding="utf-8"))
+
+print(result.regex_entities.get("CVE_ID", []))   # keys appear only when matched
+print([hit.keyword for hit in result.semantic_keywords[:5]])
+extractor.save_results_to_markdown(result)                       # results/insights_extracted.md
+extractor.save_state(extractor.output_dir / "insight_extractor_state.json")
+```
+
+The first semantic call downloads `all-MiniLM-L6-v2` (~90 MB) from Hugging Face. For a
+model-free path, see [Regex-only example](#example--regex-only-no-bert-fast).
+
+---
+
+## Installation details
+
+Install with `-c constraints.txt` — the pins encode a tested
+`transformers` / `sentence-transformers` / `accelerate` combination. Development extras
+(ruff, mypy, pytest):
 
 ```bash
 python -m pip install -e ".[dev]" -c constraints.txt
 ```
 
----
+CI's lint/type/unit jobs install `.[dev]` **without** the constraints file; keep it for a
+fully pinned local setup.
 
-## Known Issue — `ModelLoadError: name 'init_empty_weights' is not defined`
+### Known issues
 
-**Cause:** `sentence-transformers` model loading needs `init_empty_weights` from the
-`accelerate` package. If `accelerate` isn't installed at all, this error appears.
-
-**Fix:**
-
-```bash
-python -m pip install "accelerate>=1.3.0"
-```
-
-This project's `requirements.txt` and `constraints.txt` already include `accelerate`
-to prevent this on fresh installs.
-
-## Known Issue — `ImportError: cannot import name 'TorchTensorParallelPlugin' from 'accelerate.utils'`
-
-**Cause:** an `accelerate` version older than 1.3.0 installed alongside
-`transformers>=4.53.0`. Transformers' trainer module imports
-`TorchTensorParallelPlugin`, a symbol `accelerate` only added in 1.3.0. This fires at
-import time — as soon as anything imports `sentence_transformers` — not just on model
-load.
-
-**Fix:**
+Both errors trace to the `accelerate` package and both have the same fix:
 
 ```bash
 python -m pip install "accelerate>=1.3.0" --upgrade
 ```
 
-`requirements.txt` and `constraints.txt` pin `accelerate>=1.3.0` (currently `1.14.0`
-in `constraints.txt`) to prevent this on fresh installs. The live pin set is already
-compatible; this error only appears with an older `accelerate` left over from a
-previous install.
+| Error | Cause |
+|-------|-------|
+| `ModelLoadError: name 'init_empty_weights' is not defined` | `accelerate` not installed; `sentence-transformers` needs it at model-load time |
+| `ImportError: cannot import name 'TorchTensorParallelPlugin' from 'accelerate.utils'` | `accelerate < 1.3.0` alongside `transformers >= 4.53.0`; fires on `import sentence_transformers`, not just on model load |
+
+`requirements.txt` and `constraints.txt` already pin `accelerate>=1.3.0` (currently
+`1.14.0`), so fresh installs are unaffected. The error only appears with an older
+`accelerate` left over from a previous environment.
 
 ---
 
-## Running the Extractor
+## CLI and output
 
-CLI entry point: `python -m insight_extractor [file.txt]`. The same function is also
-installed as the `insight-extract` console script. Outputs
-(`insights_extracted.md`, `insight_extractor_state.json`) are written to the
-**current working directory** (or `output_dir` via the API). An existing state file
-in that directory is reloaded on the next run.
+`python -m insight_extractor [file.txt]` writes two files to the **current working
+directory** (or `output_dir` via the API), and reloads an existing state file from that
+directory on the next run:
 
-### Basic usage — pass a text file
+| File | Contents |
+|------|----------|
+| `insights_extracted.md` | Markdown report: regex entities, dynamic matches, semantic hits, key sentences, keyword stats |
+| `insight_extractor_state.json` | Keyword bank, frequencies, categories, stem mode, threshold, model name |
 
-```bash
-python -m insight_extractor my_report.txt
-```
-
-### Run with no file (uses built-in demo text)
-
-```bash
-python -m insight_extractor
-```
-
-The demo text contains ransomware, OSINT, CVE, and AI-pipeline content — useful for verifying the install works end-to-end.
-
-### Double-click launcher (Windows)
-
-Create `run.bat` in the project folder:
-
-```bat
-@echo off
-cd /d "%~dp0"
-python -m insight_extractor test.txt
-pause
-```
-
-Or a drag-and-drop version — drag any `.txt` onto this `.bat`:
-
-```bat
-@echo off
-python -m insight_extractor %1
-pause
-```
-
----
-
-## Output
-
-Every run produces two output files in the current directory (or `output_dir` if set via API):
-
-| File | Description |
-|------|-------------|
-| `insights_extracted.md` | Full Markdown report — all entity types, semantic hits, key sentences, keyword stats |
-| `insight_extractor_state.json` | Persisted keyword bank, frequencies, categories — reloaded on next run |
-
-Console output sections printed on every run:
+Because state persists, run the CLI from a scratch directory. Console sections:
 
 ```
 === REGEX ENTITIES ===
@@ -154,11 +140,20 @@ Results saved to: insights_extracted.md
 === KEYWORD STATS ===
 ```
 
+Windows drag-and-drop launcher — save as `run.bat`, then drop any `.txt` onto it:
+
+```bat
+@echo off
+python -m insight_extractor %1
+pause
+```
+
 ---
 
-## Regex Patterns — What Gets Extracted
+## Regex patterns — what gets extracted
 
-These run on every input with no BERT model required:
+These run on every input with no BERT model required. Labels are `PatternLabel` members
+(a `StrEnum`), so `"CVE_ID" in result.regex_entities` works with plain strings.
 
 | Pattern Label | Matches | Example |
 |---------------|---------|---------|
@@ -166,128 +161,112 @@ These run on every input with no BERT model required:
 | `IP_ADDRESS` | IPv4 addresses | `192.168.1.254` |
 | `HASH_SHA256` | 64-char hex strings | `3b4c5d6e...` |
 | `HASH_MD5` | 32-char hex strings | `d41d8cd9...` |
-| `DOMAIN` | Domains (.com/.net/.onion/etc.) | `ransom.onion` |
+| `DOMAIN` | Hostnames ending in `.com .net .org .io .gov .edu .onion .xyz .co` | `ransom.onion` |
 | `EMAIL` | Email addresses | `threat@dark.io` |
-| `BTC_WALLET` | Bitcoin wallet addresses | `1A1zP1eP5Q...` |
-| `RANSOM_AMOUNT` | Dollar amounts with scale | `$5 million` |
-| `FILE_EXTENSION` | Malware-relevant extensions | `.exe`, `.locked`, `.ps1` |
-| `DARK_WEB` | `.onion` domains | `abc123.onion` |
-| `TELEGRAM_HANDLE` | @handles (5+ chars) | `@threatactor` |
-| `PORT_NUMBER` | Port references | `port 4444` |
-| `TB_GB_DATA` | Data volume mentions | `8 TB`, `500 GB` |
-| `YEAR` | 4-digit years 20xx | `2026` |
+| `BTC_WALLET` | Legacy (`1…`/`3…`) Bitcoin addresses | `1A1zP1eP5Q...` |
+| `RANSOM_AMOUNT` | Dollar amounts, optional `k`/`M`/`B`/million/billion scale | `$5 million`, `$186` |
+| `FILE_EXTENSION` | `.exe .dll .ps1 .bat .sh .py .bin .enc .locked` | `.locked` |
+| `DARK_WEB` | `.onion` hostnames | `abc123.onion` |
+| `TELEGRAM_HANDLE` | `@handle`, 5+ word characters | `@threatactor` |
+| `PORT_NUMBER` | `port NNNN` — returns the number only | `4444` |
+| `TB_GB_DATA` | Data volumes in MB/GB/TB | `8 TB`, `500 GB` |
+| `YEAR` | Four-digit years 2010–2029 | `2026` |
 | `PERCENTAGE` | Percentage values | `94.3%` |
 
 ---
 
-## Python API — Full Options
+## Python API
 
 ### `InsightExtractor` constructor
 
 ```python
-from insight_extractor.extractor import InsightExtractor
-from insight_extractor.config import StemMode
+from insight_extractor import InsightExtractor, StemMode
 
 extractor = InsightExtractor(
-    # BERT model name (HuggingFace model ID or local path)
-    model_name="sentence-transformers/all-MiniLM-L6-v2",
-
-    # Optional YAML/TOML/JSON config file with seed_keywords, threshold, stem_mode
-    config_path=None,
-
-    # Seed keywords — omitted or empty both load THREAD_SEEDS from constants.py
-    seed_keywords=["ransomware", "CVE", "OSINT"],
-
-    # Max results returned by extract_key_sentences()
-    top_k=10,
-
-    # Cosine similarity threshold for semantic hits (0.0–1.0)
-    similarity_threshold=0.38,
-
-    # Top-N TF-IDF candidates evaluated during keyword expansion
-    dynamic_expansion_top_n=15,
-
-    # Stemming mode: EXACT | STEM | PREFIX | SUFFIX | FUZZY | REGEX
-    stem_mode=StemMode.STEM,
-
-    # Whether to generate dynamic regex patterns from the keyword bank
-    enable_dynamic_regex=True,
-
-    # Extra suffixes for the stemmer (e.g. ("ed", "ing", "er"))
-    custom_stem_suffixes=None,
-
-    # Directory where output files are written
-    output_dir=".",
+    model_name="sentence-transformers/all-MiniLM-L6-v2",  # HF model ID or local path
+    config_path=None,              # optional .toml / .yaml / .yml / .json (see below)
+    seed_keywords=None,            # None *or* [] both load THREAD_SEEDS (363 terms)
+    top_k=10,                      # max results from extract_key_sentences()
+    similarity_threshold=0.38,     # cosine threshold for semantic hits (0.0–1.0)
+    dynamic_expansion_top_n=15,    # TF-IDF candidates considered per expansion
+    # keyword-only from here:
+    stem_mode=StemMode.STEM,       # EXACT | STEM | PREFIX | SUFFIX | FUZZY | REGEX
+    enable_dynamic_regex=True,     # compile the keyword bank into regex patterns
+    custom_stem_suffixes=None,     # e.g. ("ed", "ing", "er"); None uses the default tuple
+    output_dir=".",                # where reports and state are written
 )
 ```
 
-### Stem modes explained
+A config file may set `seed_keywords`, `similarity_threshold`, and `stem_mode`; these
+override the constructor arguments. A missing file is ignored and an unparseable one logs
+a warning and falls back to defaults:
+
+```toml
+# extractor.toml
+seed_keywords = ["lockbit", "clop", "akira"]
+similarity_threshold = 0.30
+stem_mode = "prefix"
+```
+
+### Stem modes
 
 | Mode | Behavior |
 |------|----------|
-| `EXACT` | Match keyword exactly as given, case-insensitive |
-| `STEM` | Keyword plus optional known suffixes at word boundaries (default) |
-| `PREFIX` | Match any word starting with the keyword |
-| `SUFFIX` | Match any word ending with the keyword |
-| `FUZZY` | Substring match: any word containing the keyword |
-| `REGEX` | Treat keyword as a raw regex pattern (unescaped — caller owns validity) |
+| `EXACT` | Keyword exactly as given, case-insensitive, at word boundaries |
+| `STEM` | Keyword plus an optional known suffix (`s es ed ing er est ly tion ness ment`) at word boundaries — default |
+| `PREFIX` | Any word starting with the keyword |
+| `SUFFIX` | Any word ending with the keyword |
+| `FUZZY` | Any word containing the keyword |
+| `REGEX` | Keyword is a raw regex, passed through unescaped — the caller owns validity |
+
+Keywords that start or end with a non-word character (`C++`, `.NET`) compile but never match
+in `EXACT`/`STEM` because `\b` needs a word/non-word transition; use `REGEX` for those.
+Interior punctuation is fine (`zero-day` matches normally).
 
 ### Extraction methods
 
 ```python
-# Full pipeline — regex + dynamic + semantic + key sentences + keyword expansion
-result = extractor.extract(text, update_keywords=True)
+# Full pipeline: regex + dynamic + semantic + key sentences + keyword expansion
+result = extractor.extract(text, update_keywords=True)   # -> ExtractResult
 
-# Regex-only (no BERT model needed, fast)
-regex_hits = extractor.extract_regex_entities(text)
-# Returns: dict[str, list[str]]  e.g. {"CVE_ID": ["CVE-2026-1234"], "IP_ADDRESS": [...]}
-
-# Dynamic keyword pattern matching (no BERT needed)
-dynamic_hits = extractor.extract_dynamic_entities(text)
-# Returns: dict[str, list[str]]
-
-# Semantic similarity hits (triggers BERT model load on first call)
-semantic_hits = extractor.extract_semantic_keywords(text, chunk_size=512)
-# Returns: list[SemanticHit]  — each has .keyword, .score, .context
-
-# Top-scored sentences (triggers BERT model load)
-sentences = extractor.extract_key_sentences(text, top_n=5)
-# Returns: list[SentenceScore]  — each has .sentence, .score
-
-# Keyword positions in text (character offsets)
+# Model-free, fast
+regex_hits = extractor.extract_regex_entities(text)      # -> dict[str, list[str]]
+dynamic_hits = extractor.extract_dynamic_entities(text)  # -> dict[str, list[str]]
 positions = extractor.extract_keywords_with_positions(text)
-# Returns: list[dict]  — each has keyword, match, start, end, category
+# -> list[dict] with keys: keyword, match, start, end, category
 
-# Grow keyword bank from new text (TF-IDF + BERT similarity)
-new_keywords = extractor.update_thread_keywords(text, auto_expand=True)
+# Loads the BERT model on first call
+semantic_hits = extractor.extract_semantic_keywords(text, chunk_size=512)
+# -> list[SemanticHit]  (.keyword, .score, .context)
+sentences = extractor.extract_key_sentences(text, top_n=5)
+# -> list[SentenceScore] (.sentence, .score)
+new_keywords = extractor.update_thread_keywords(text, auto_expand=True)  # -> list[str]
 
-# Keyword statistics snapshot
-stats = extractor.get_keyword_stats()
-# Returns KeywordStats: total_keywords, category_counts, top_keywords, stem_mode, ...
-
-# Top-N keywords by frequency
-top = extractor.top_keywords(n=20)
-# Returns: list[tuple[str, int]]
-
-# Save full Markdown report
+# Stats, reports, persistence
+stats = extractor.get_keyword_stats()                    # -> KeywordStats
+top = extractor.top_keywords(n=20)                       # -> list[tuple[str, int]]
 md_path = extractor.save_results_to_markdown(result, filename="insights_extracted.md")
-
-# Save/load keyword state between sessions
-extractor.save_state(path="insight_extractor_state.json")
-extractor.load_state(path="insight_extractor_state.json")
+# A relative Path resolves from the CWD, not output_dir, so build it from output_dir:
+state_path = extractor.output_dir / "insight_extractor_state.json"
+extractor.save_state(state_path)            # -> None
+loaded = extractor.load_state(state_path)   # -> bool
 ```
+
+`ExtractResult` fields: `timestamp`, `input_hash`, `word_count`, `regex_entities`,
+`dynamic_keyword_matches`, `semantic_keywords`, `key_sentences`,
+`newly_expanded_keywords`, `total_tracked_keywords`, `keyword_stats`.
 
 ### Keyword categories
 
-Every keyword is auto-categorised into one of:
+Every keyword is auto-categorised into one `KeywordCategory`:
 
-| Category | Description |
-|----------|-------------|
+| Category | Covers |
+|----------|--------|
 | `threat_intel` | Ransomware, malware, TTPs, CVEs, threat actors |
 | `osint` | OSINT tools, data brokers, recon techniques, PII |
-| `ai_safety` | AI safety & security — alignment, jailbreaks, prompt injection, bias |
+| `ai_safety` | Alignment, jailbreaks, prompt injection, bias |
 | `ai_infra` | LLMs, RAG, embeddings, vector DBs, AI frameworks |
-| `infosec` | Security operations — red teaming, incident response, SIEM/EDR, threat hunting |
+| `infosec` | Red teaming, incident response, SIEM/EDR, threat hunting |
 | `general` | Everything else |
 
 ### Example — regex-only (no BERT, fast)
@@ -295,7 +274,7 @@ Every keyword is auto-categorised into one of:
 ```python
 from pathlib import Path
 
-from insight_extractor.extractor import InsightExtractor
+from insight_extractor import InsightExtractor
 
 extractor = InsightExtractor(enable_dynamic_regex=False)
 hits = extractor.extract_regex_entities(Path("report.txt").read_text(encoding="utf-8"))
@@ -303,13 +282,12 @@ for label, matches in hits.items():
     print(f"{label}: {matches}")
 ```
 
-### Example — custom keywords + lower threshold
+### Example — custom keywords, lower threshold
 
 ```python
 from pathlib import Path
 
-from insight_extractor.config import StemMode
-from insight_extractor.extractor import InsightExtractor
+from insight_extractor import InsightExtractor, StemMode
 
 extractor = InsightExtractor(
     seed_keywords=["lockbit", "clop", "medusa", "akira"],
@@ -321,206 +299,162 @@ result = extractor.extract(Path("intel_report.txt").read_text(encoding="utf-8"))
 extractor.save_results_to_markdown(result, filename="lockbit_report.md")
 ```
 
-### Example — DynamicKeywordStemmer standalone
+### Example — `DynamicKeywordStemmer` standalone
 
 ```python
-from insight_extractor import DynamicKeywordStemmer, StemMode, THREAD_SEEDS
+from insight_extractor import THREAD_SEEDS, DynamicKeywordStemmer, StemMode
 
 stemmer = DynamicKeywordStemmer(stem_mode=StemMode.STEM, case_sensitive=False)
 stemmer.set_keywords(THREAD_SEEDS)
 
-matches = stemmer.find_matches("ALPHV ransomware exploited CVE-2024-1234 via lateral movement.")
-for m in matches:
+for m in stemmer.find_matches("ALPHV ransomware exploited CVE-2024-1234 via lateral movement."):
     print(f"  {m.keyword!r} -> span={m.start}-{m.end}, stemmed={m.stemmed}")
 ```
 
 ---
 
-## Project Structure
-
-```
-Insight_Extractor/
-├── .github/
-│   └── workflows/
-│       ├── ci.yml              # Required: lint, mypy, unit (3.12/3.13), CLI smoke
-│       └── gitleaks.yml        # Secret scanning on push/PR
-├── LICENSE                     # MIT
-├── pyproject.toml              # PEP 621 metadata + tool config (requires-python >=3.12)
-├── requirements.txt            # Runtime deps (accelerate>=1.3.0, transformers>=4.53.0)
-├── constraints.txt             # Pinned known-good versions
-├── README.md                   # This file
-├── docs/SPEC.md                # Technical design reference; source is behavioral authority
-├── src/
-│   └── insight_extractor/
-│       ├── __init__.py         # Package entry point with lazy imports
-│       ├── __main__.py         # CLI: python -m insight_extractor [file.txt]
-│       ├── config.py           # Enums: StemMode, KeywordCategory, PatternLabel
-│       ├── constants.py        # THREAD_SEEDS (363 keywords), REGEX_PATTERNS (15)
-│       ├── exceptions.py       # Custom exception hierarchy
-│       ├── models.py           # Pydantic v2 models (ExtractResult, SemanticHit, ...)
-│       ├── stemmer.py          # DynamicKeywordStemmer, KeywordPatternRegistry
-│       ├── extractor.py        # InsightExtractor orchestrator (main engine)
-│       ├── tokenizer.py        # SentenceTokenizer (lazy AutoTokenizer)
-│       ├── utils.py            # Logging, hashing, timestamp helpers
-│       └── py.typed            # PEP 561 typed package marker
-└── tests/
-    ├── conftest.py             # Shared pytest fixtures
-    ├── unit/                   # Required CI — model-free (inject fakes for BERT)
-    │   ├── test_exceptions.py
-    │   ├── test_extractor.py
-    │   ├── test_models.py
-    │   ├── test_stemmer.py
-    │   ├── test_tokenizer.py
-    │   └── test_utils.py
-    └── integration/            # Optional / not a required CI gate — see Testing
-        ├── test_extractor.py
-        └── test_e2e.py
-```
-
----
-
-## Codex setup
-
-Start at [AGENTS.md](AGENTS.md) and [the Codex workflow map](.codex/README.md).
-Repository skills are discoverable under `.agents/skills/` with `insight-` names.
-See [the setup review](docs/CODEX_SETUP_REVIEW.md) for verified scope and follow-ups.
-
-## Testing
-
-Required CI (`ci-pass` in `.github/workflows/ci.yml`) on every push/PR:
-
-1. `ruff check` + `ruff format --check`
-2. `mypy src/insight_extractor` (strict)
-3. `pytest tests/unit/` on Python **3.12 and 3.13** (no network, no model download)
-4. CLI smoke job — production `python -m insight_extractor` orchestration with fake
-   BERT boundaries (`HF_HUB_OFFLINE=1`); asserts the `insight-extract` script exists
-
-Optional integration CI (`pytest tests/integration/`) runs only on `workflow_dispatch`
-or when a **push head-commit** message contains `[run-integration]`. A pull-request
-commit message alone does **not** enable that job. The suite exercises full
-extractor orchestration against the live public API with injected fake
-model/tokenizer boundaries (no HuggingFace download). It does **not** certify
-real BERT weight compatibility; required CI going green still does not imply a
-live-model run.
-
-```bash
-# Required local gates (same as CI, minus the smoke job)
-python -m pip install -e ".[dev]" -c constraints.txt
-python -m ruff check src/ tests/
-python -m ruff format --check src/ tests/
-python -m mypy src/insight_extractor
-python -m pytest tests/unit/ -v --tb=short
-
-# Coverage (unit only)
-python -m pytest tests/unit/ --cov=insight_extractor --cov-report=term-missing
-```
-
----
-
-## Core API Reference
+## Core API reference
 
 ### `DynamicKeywordStemmer`
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| Constructor | `DynamicKeywordStemmer(*, stem_mode, case_sensitive, custom_suffixes)` | Keyword-only constructor |
+| Constructor | `DynamicKeywordStemmer(*, stem_mode, case_sensitive, custom_suffixes, max_pattern_length)` | Keyword-only constructor |
 | `generate_pattern` | `(keyword, mode=None) -> str` | Regex pattern for one keyword |
 | `generate_stem_variations` | `(keyword) -> list[str]` | All stemmed forms |
-| `compile_keywords` | `(keywords) -> KeywordPattern` | One logical pattern, chunked internally for large keyword banks |
+| `compile_keywords` | `(keywords) -> KeywordPattern` | One logical pattern, chunked internally for large banks |
+| `compile_keywords_incremental` | `(keywords) -> KeywordPattern` | Recompile only the appended tail when the bank grows |
 | `compile_typed_patterns` | `(keywords) -> dict[str, re.Pattern]` | Per-keyword typed patterns |
-| `find_matches` | `(text) -> list[MatchInfo]` | All keyword matches with positions |
-| `add_keyword` | `(kw)` | Add one keyword and recompile |
-| `remove_keyword` | `(kw)` | Remove one keyword and recompile |
-| `set_keywords` | `(kws)` | Replace full keyword set |
+| `find_matches` | `(text) -> list[MatchInfo]` | All keyword matches with positions (`.match .keyword .start .end .stemmed`) |
+| `add_keyword` / `remove_keyword` | `(keyword)` | Mutate the bank and invalidate caches |
+| `set_keywords` | `(keywords)` | Replace the full keyword set |
+| `compiled_pattern` | property `-> KeywordPattern \| None` | Lazily compiled master pattern |
 
 ### `KeywordPatternRegistry`
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| Constructor | `KeywordPatternRegistry(static_patterns, stemmer)` | Create registry |
-| `all_patterns` | property `-> dict[str, str]` | Static + dynamic patterns combined |
-| `regenerate_dynamic_patterns` | `(keywords)` | Rebuild from keyword list |
+| Constructor | `KeywordPatternRegistry(static_patterns, stemmer)` | Combine static regexes with a stemmer |
+| `all_patterns` | property `-> dict[str, str]` | Static + dynamic patterns |
+| `regenerate_dynamic_patterns` | `(keywords)` | Rebuild dynamic patterns — call after any keyword change |
 | `extract_all` | `(text) -> dict[str, list[str]]` | All pattern matches from text |
 
----
+All of the above, plus `SentenceTokenizer`, the Pydantic models, the exceptions
+(`InsightExtractorError` → `ConfigLoadError`, `ModelLoadError`, `StateLoadError`,
+`PatternCompileError`), `THREAD_SEEDS`, and `REGEX_PATTERNS`, import from the top-level
+package. Heavy classes are lazy-imported, so `import insight_extractor` never pulls in torch.
 
 ---
 
-## Example Output
+## Project structure
 
-The following shows actual pipeline output when run against an AI safety research corpus
-(`src/sample_input.txt` — 19,248 words, 441 extracted insights, sourced from cgfixit.com RAG DB).
+```
+Insight_Extractor/
+├── .github/workflows/
+│   ├── ci.yml                  # Required: ruff, mypy, unit (3.12/3.13), CLI smoke; optional integration
+│   └── gitleaks.yml            # Secret scanning on push/PR
+├── .claude/skills/             # Claude Code skills: preflight, add-entity-pattern, deps, verification
+├── .agents/skills/             # Cross-agent skills (insight-* names)
+├── .codex/                     # Codex workflow map and custom instructions
+├── AGENTS.md                   # Short cross-agent operating summary
+├── CLAUDE.md                   # Full agent operating manual (conventions, footguns, gates)
+├── LICENSE                     # MIT
+├── pyproject.toml              # PEP 621 metadata + ruff/mypy/pytest config
+├── requirements.txt            # Runtime bounds
+├── constraints.txt             # Exact known-good pins
+├── docs/
+│   ├── SPEC.md                 # Design reference; source code is the behavioural authority
+│   ├── SECURITY_AUDIT.md       # Dependency CVE triage with reachability verdicts
+│   └── CODEX_SETUP_REVIEW.md   # Verified Codex setup scope
+├── src/
+│   ├── sample_input.txt        # 19k-word AI-safety reference corpus
+│   ├── sample_extracted_insights.md
+│   └── insight_extractor/
+│       ├── __init__.py         # Public exports; lazy imports for heavy classes
+│       ├── __main__.py         # CLI: python -m insight_extractor [file.txt]
+│       ├── config.py           # StemMode, KeywordCategory, PatternLabel
+│       ├── constants.py        # THREAD_SEEDS (363), REGEX_PATTERNS (15)
+│       ├── exceptions.py       # InsightExtractorError hierarchy
+│       ├── models.py           # Pydantic v2 result models
+│       ├── stemmer.py          # DynamicKeywordStemmer, KeywordPatternRegistry
+│       ├── extractor.py        # InsightExtractor orchestrator
+│       ├── tokenizer.py        # SentenceTokenizer (lazy AutoTokenizer)
+│       ├── utils.py            # Logging, hashing, timestamps
+│       └── py.typed
+└── tests/
+    ├── unit/                   # Required CI, model-free (fakes injected via _model/_tokenizer)
+    └── integration/            # Optional: full orchestration with offline ML doubles
+```
+
+---
+
+## Testing and CI
+
+Required CI (`ci-pass` in `.github/workflows/ci.yml`) on every push and PR:
+
+1. `ruff check` + `ruff format --check`
+2. `mypy src/insight_extractor` (strict)
+3. `pytest tests/unit/` on Python **3.12 and 3.13** — no network, no model download
+4. CLI smoke — the production `python -m insight_extractor` path with fake BERT
+   boundaries (`HF_HUB_OFFLINE=1`); also asserts the `insight-extract` script exists
+
+Integration tests (`tests/integration/`) run the full orchestration with fake model/tokenizer
+doubles, only on `workflow_dispatch` or when a **push head commit** message contains
+`[run-integration]`. Neither suite certifies real BERT weight compatibility.
+
+Local gates, same order as CI:
 
 ```bash
-python -m insight_extractor src/sample_input.txt
+python -m ruff check src/ tests/
+python -m ruff format --check src/ tests/
+python -m mypy src/insight_extractor
+python -m pytest tests/unit/ -v --tb=short
 ```
 
-> The transcript below was captured with the original 69-keyword seed bank; the current
-> default `THREAD_SEEDS` bank has 363 keywords, so your counts will be higher.
+Agents working in this repo should start at [AGENTS.md](AGENTS.md) (cross-agent summary),
+[CLAUDE.md](CLAUDE.md) (full manual), or [the Codex workflow map](.codex/README.md).
 
-### Console Output
+---
+
+## Example output
+
+Captured from `python -m insight_extractor src/sample_input.txt` — a ~19k-word AI-safety
+corpus sourced from the cgfixit.com RAG database. The full report is checked in as
+`src/sample_extracted_insights.md`.
+
+> This transcript used the original 69-keyword seed bank. The current default bank has
+> 363 keywords, so your counts will be higher.
 
 ```
-2026-06-24 19:53:02,562 [INFO] InsightExtractor init | model=all-MiniLM-L6-v2 | seeds=69 | stem_mode=stem
-2026-06-24 19:53:02,746 [INFO] Loading BERT model: all-MiniLM-L6-v2
-2026-06-24 19:53:02,746 [INFO] Load pretrained SentenceTransformer: all-MiniLM-L6-v2
-
 === REGEX ENTITIES ===
-  CVE_ID: []
-  DOMAIN: ['medium.com', 'fortune.com', 'techcrunch.com', 'hiddenlayer.com', 'cbsnews.com',
-           'rollingstone.com', 'ndtv.com', 'tech.co', 'etftrends.com']
+  DOMAIN: ['medium.com', 'fortune.com', 'techcrunch.com', 'hiddenlayer.com', ...]
   RANSOM_AMOUNT: ['$9M', '$186', '$950M']
   FILE_EXTENSION: ['.py']
   TELEGRAM_HANDLE: ['@sobyx']
   YEAR: ['2025', '2026', '2024', '2023', '2020', '2019', '2015']
-  PERCENTAGE: ['4.1%', '9.6%', '13%', '68%', '800%', '1%', '10%', '0%', '3%', '12%',
-               '15%', '20%', '25%', '30%', '40%', '50%', '60%', '70%', '80%', '90%', '100%', '5%']
+  PERCENTAGE: ['4.1%', '9.6%', '13%', '68%', '800%', ...]
 
 === DYNAMIC KEYWORD MATCHES ===
-  loader: ['loader', 'Loader', 'loader', ...]  (31 total)
+  loader: ['loader', 'Loader', ...]  (31 total)
   veeam: ['veeam', 'Veeam', ...]  (16 total)
-  offline: ['offline', 'Offline', ...]  (15 total)
   RAG: ['RAG', 'rag', ...]  (9 total)
-  APT: ['APT', 'apt', ...]  (9 total)
-  conti: ['conti', 'Conti', ...]  (8 total)
   exploit: ['exploit', 'exploiting', ...]  (8 total)
-  blackmail: ['blackmail', ...]  (3 total)
-  dox: ['dox', ...]  (2 total)
-  personality: ['personality', ...]  (2 total)
   supply chain: ['supply chain']  (1 total)
-  minor: ['minor']  (1 total)
-  soul: ['soul']  (1 total)
-  embedding: ['embedding']  (1 total)
 
 === SEMANTIC KEYWORD HITS (top 10) ===
   [0.821] offline
            ...MCP-Specific Offline Patterns — validates thread emphasis on offline MCP ...
   [0.794] RAG
            ...PsyClaw uses BERT embeddings with ChromaDB and BM25 hybrid retrieval via R...
-  [0.778] embedding
-           ...BERT embeddings with ChromaDB and BM25 hybrid retrieval...
-  [0.761] veeam
-           ...Stem hits: optimize, validate, veeam — Score: 3...
-  [0.743] soul
-           ...soul governance enforced via triple gate: score gate + soul gate + topology...
-  [0.731] exploit
-           ...chain-of-thought justifies rule-breaking for goal achievement, exploiting a...
   [0.718] APT
            ...advanced persistent threat actors leverage AI-generated phishing at scale...
   [0.702] conti
            ...leaked Conti 2 builder code repurposed for ESXi locker generation...
-  [0.695] personality
-           ...model personality drift observed across extended context windows...
-  [0.681] supply chain
-           ...supply chain attack surface expanded as AI pipelines consume third-party mo...
 
 === KEY SENTENCES ===
   [0.821] MCP-Specific Offline Patterns - Score: 1 - Stem hits: pattern
-  [0.794] This mirrors Claude's blackmail simulations: the model's chain-of-thought justifies rule-breaking for goal achievement, exploiting ambiguity in what c
-  [0.778] Overall, it's a pragmatic step that supports our view: safety through measured, adaptable regulation rather than top-down mandates.
-  [0.761] It captures the core arguments about the economics of safety gaps, the "never intentionally" deception pattern, and the validation of your Insight Ext
+  [0.794] This mirrors Claude's blackmail simulations: the model's chain-of-thought ...
   [0.743] Validates thread emphasis on offline MCP with mandatory approval gates.
-  [0.731] - Score: 8 - Stem hits: bia, decept, manipulate, test, veeam - High-signal: deception
 
 === DYNAMIC EXPANSION: +10 new keywords ===
   ['alignment', 'deception', 'agentic', 'oversight', 'autonomy',
@@ -528,79 +462,15 @@ python -m insight_extractor src/sample_input.txt
 
 Total tracked keywords: 79
 
-Results saved to: insights_extracted.md
-
 === KEYWORD STATS ===
   Categories: {'threat_intel': 28, 'osint': 12, 'ai_safety': 9, 'ai_infra': 12, 'infosec': 8, 'general': 10}
   Stem mode: stem
 ```
 
-### Generated `insights_extracted.md` (truncated)
-
-```markdown
-# Insight Extraction Results
-
-**Generated:** 2026-06-24T23:59:00Z
-**Source file:** AI-Safety-Full-insight222.md
-**Word Count:** 19,248
-**Total Tracked Keywords:** 79 (69 seed + 10 expanded)
-
 ---
 
-## Regex Entities
-
-### DOMAIN
-- `medium.com`
-- `fortune.com`
-- `techcrunch.com`
-- `hiddenlayer.com`
-
-### RANSOM_AMOUNT
-- `$9M`
-- `$950M`
-
-### YEAR
-- `2026`, `2025`, `2024`, `2023`
-
----
-
-## Semantic Keywords
-
-| Keyword | Score | Context |
-|---------|-------|---------|
-| offline | 0.8210 | MCP-Specific Offline Patterns — validates thread emphasis on offline MCP |
-| RAG | 0.7940 | PsyClaw uses BERT embeddings with ChromaDB and BM25 hybrid retrieval |
-| embedding | 0.7780 | BERT embeddings with ChromaDB and BM25 hybrid retrieval |
-| veeam | 0.7610 | Stem hits: optimize, validate, veeam |
-| soul | 0.7430 | soul governance enforced via triple gate |
-
----
-
-## Key Sentences
-
-| Score | Sentence |
-|-------|----------|
-| 0.8210 | MCP-Specific Offline Patterns — validates thread emphasis on offline MCP with mandatory approval gates. |
-| 0.7940 | This mirrors Claude's blackmail simulations: the model's chain-of-thought justifies rule-breaking... |
-| 0.7780 | Overall, it's a pragmatic step that supports our view: safety through measured regulation. |
-
----
-
-## Newly Expanded Keywords
-
-`alignment`, `deception`, `agentic`, `oversight`, `autonomy`, `chain-of-thought`,
-`adversarial`, `capability`, `approval`, `governance`
-```
-
-> **Sample files included:** `src/sample_input.txt` (the AI safety corpus above) and
-> `src/sample_extracted_insights.md` (full output) are included in this repo for
-> reference. Run `python -m insight_extractor src/sample_input.txt` to reproduce.
-
----
 ## License
 
-MIT License. See [LICENSE](LICENSE) for details.
-
----
+MIT. See [LICENSE](LICENSE).
 
 Initial inspiration: https://cgfixit.com/ai
