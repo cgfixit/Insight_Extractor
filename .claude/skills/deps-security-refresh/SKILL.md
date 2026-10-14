@@ -22,8 +22,8 @@ that consistent.
   `init_empty_weights` crash. Never "clean it up" as unused.
 - `transformers` floor is `>=4.53.0` — below that, 18 fixed CVEs reopen (ReDoS + RCE
   batches, see the audit doc). Ceiling `<5.0.0` — untested major.
-- `sentence-transformers` stays `>=3.4.1,<4.0.0` unless the task is explicitly a major
-  migration (that's an ask-first change).
+- `sentence-transformers` stays `>=5.6.0,<6.0.0` (bumped from `>=3.4.1,<4.0.0` in commit
+  `1d45bf1`) unless the task is explicitly a major migration (that's an ask-first change).
 - Bumping pins beyond what the task explicitly requires is an **ask-first** action.
 
 ## Step 1 — Establish scope

@@ -272,14 +272,15 @@ produced `ModelLoadError: name 'init_empty_weights' is not defined` — the miss
   sentence-transformers model loading. Do not "clean it up".
 - `transformers` must stay `>=4.53.0,<5.0.0` — the floor clears 18 CVEs (see
   `docs/SECURITY_AUDIT.md`), the ceiling avoids untested majors.
-- **Known broken pin (verified 2026-07, Linux/py3.12):** the constraints set
-  `transformers==4.53.0` + `accelerate==0.34.2` cannot import together —
+- **Previously broken pin (reproduced 2026-07, Linux/py3.12; fixed in `312096b`):** the
+  constraints set `transformers==4.53.0` + `accelerate==0.34.2` could not import together —
   `ImportError: cannot import name 'TorchTensorParallelPlugin' from 'accelerate.utils'`
   the moment anything imports `sentence_transformers` (so unit tests fail to collect).
   transformers 4.53's trainer needs `accelerate>=1.3.0`. CI stays green only because
   its jobs run `pip install -e ".[dev]"` **without** `-c constraints.txt` and resolve a
-  modern accelerate. If a constraints-based install hits this, upgrade accelerate in
-  the local env and flag it — fixing the pin itself is an ask-first change (§6).
+  modern accelerate. `constraints.txt` now pins `accelerate==1.14.0`; if a
+  constraints-based install ever hits this again, upgrade accelerate in the local env
+  and flag it — changing the pin itself is an ask-first change (§6).
 - Any dependency change ⇒ update `docs/SECURITY_AUDIT.md` and re-check the README
   "Known Issue" section (use the `deps-security-refresh` skill).
 

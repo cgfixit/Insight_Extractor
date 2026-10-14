@@ -125,6 +125,15 @@ advisory not previously listed here: **`PYSEC-2026-2290`** (fixed in `5.5.0`), n
 triaged. Rolled into the same dedicated `transformers` CVE re-triage noted above — no
 verdict assigned, no pin changed.
 
+**2026-10-14 re-check:** re-ran `pip-audit` against the constraints-pinned environment
+(`transformers==4.53.0`, `accelerate==1.14.0`, `sentence-transformers==5.6.0`) during a
+dependency-doc drift pass. Same findings as above plus three net-new advisories not
+previously listed here: **`PYSEC-2026-3929`** (transformers, fixed in `5.10.0`),
+**`PYSEC-2026-4174`** (transformers, no fix version reported), and
+**`PYSEC-2026-3804`** (`accelerate`, no fix version reported — first advisory recorded
+against `accelerate` in this document). Not triaged; rolled into the same dedicated
+re-triage. No verdict assigned, no pin changed.
+
 ---
 
 ## SAST Findings (bandit)
@@ -173,6 +182,24 @@ SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", revision="c9b44c9"
 +transformers==4.53.0
 +accelerate==0.34.2
 ```
+
+### 2026-10-06 addendum — sentence-transformers major bump (commit 1d45bf1, dependabot)
+
+```diff
+--- a/requirements.txt (and pyproject.toml)
++++ b/requirements.txt (and pyproject.toml)
+-sentence-transformers>=3.4.1,<4.0.0
++sentence-transformers>=5.6.0,<6.0.0
+
+--- a/constraints.txt
++++ b/constraints.txt
+-sentence-transformers==3.4.1
++sentence-transformers==5.6.0
+```
+
+No pip-audit findings were triaged with this bump (see the 2026-10-14 re-check note
+above); `transformers==4.53.0` and `accelerate==1.14.0` are unchanged and the import
+triangle was re-verified on 2026-10-14.
 
 ### 2026-07-08 addendum — accelerate compatibility fix
 
