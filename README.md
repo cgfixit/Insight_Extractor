@@ -5,7 +5,7 @@ call. `insight-extractor` is a Python 3.12+ library that layers three complement
 pipelines over a single input:
 
 1. **Regex entity extraction** — 15 pre-built IOC patterns (CVEs, hashes, IPs, wallets,
-   `.onion` domains, ports, …). No model, sub-millisecond.
+   `.onion` domains, ports, …). No model required.
 2. **Dynamic keyword matching** — a 363-term seed bank with configurable stemming
    (exact, suffix-expansion, prefix, suffix, fuzzy, raw regex), compiled into chunked
    patterns that scale to thousands of keywords.
@@ -13,8 +13,9 @@ pipelines over a single input:
    (`all-MiniLM-L6-v2` by default), plus TF-IDF-driven keyword expansion that grows the
    bank from what it reads.
 
-Everything comes back as Pydantic v2 models, a Markdown report, and a JSON state file that
-carries the learned keyword bank into the next run.
+Results are Pydantic v2 models. The CLI also writes a Markdown report and a JSON state file
+that carries the learned keyword bank into the next run; API callers get the same files by
+calling `save_results_to_markdown()` and `save_state()`.
 
 ## Why use it
 
@@ -69,9 +70,10 @@ from insight_extractor import InsightExtractor
 extractor = InsightExtractor(output_dir="results")
 result = extractor.extract(Path("my_report.txt").read_text(encoding="utf-8"))
 
-print(result.regex_entities["CVE_ID"])
+print(result.regex_entities.get("CVE_ID", []))   # keys appear only when matched
 print([hit.keyword for hit in result.semantic_keywords[:5]])
-extractor.save_results_to_markdown(result)
+extractor.save_results_to_markdown(result)                       # results/insights_extracted.md
+extractor.save_state(extractor.output_dir / "insight_extractor_state.json")
 ```
 
 The first semantic call downloads `all-MiniLM-L6-v2` (~90 MB) from Hugging Face. For a
@@ -122,8 +124,7 @@ directory on the next run:
 | `insights_extracted.md` | Markdown report: regex entities, dynamic matches, semantic hits, key sentences, keyword stats |
 | `insight_extractor_state.json` | Keyword bank, frequencies, categories, stem mode, threshold, model name |
 
-Because state persists, run the CLI from a scratch directory rather than the repo root.
-Console output mirrors the report sections:
+Because state persists, run the CLI from a scratch directory. Console sections:
 
 ```
 === REGEX ENTITIES ===
@@ -168,8 +169,6 @@ These run on every input with no BERT model required. Labels are `PatternLabel` 
 | `TB_GB_DATA` | Data volumes in MB/GB/TB | `8 TB`, `500 GB` |
 | `YEAR` | Four-digit years 2010–2029 | `2026` |
 | `PERCENTAGE` | Percentage values | `94.3%` |
-
-To add a pattern, see the `add-entity-pattern` skill under `.claude/skills/`.
 
 ---
 
@@ -217,8 +216,9 @@ stem_mode = "prefix"
 | `FUZZY` | Any word containing the keyword |
 | `REGEX` | Keyword is a raw regex, passed through unescaped — the caller owns validity |
 
-Keywords containing non-word characters (`C++`, `.NET`) compile but never match in
-`EXACT`/`STEM` because `\b` needs a word/non-word transition; use `REGEX` for those.
+Keywords that start or end with a non-word character (`C++`, `.NET`) compile but never match
+in `EXACT`/`STEM` because `\b` needs a word/non-word transition; use `REGEX` for those.
+Interior punctuation is fine (`zero-day` matches normally).
 
 ### Extraction methods
 
@@ -243,8 +243,10 @@ new_keywords = extractor.update_thread_keywords(text, auto_expand=True)  # -> li
 stats = extractor.get_keyword_stats()                    # -> KeywordStats
 top = extractor.top_keywords(n=20)                       # -> list[tuple[str, int]]
 md_path = extractor.save_results_to_markdown(result, filename="insights_extracted.md")
-extractor.save_state(Path("insight_extractor_state.json"))   # str paths are deprecated
-loaded = extractor.load_state(Path("insight_extractor_state.json"))  # -> bool
+# A relative Path resolves from the CWD, not output_dir, so build it from output_dir:
+state_path = extractor.output_dir / "insight_extractor_state.json"
+extractor.save_state(state_path)            # -> None
+loaded = extractor.load_state(state_path)   # -> bool
 ```
 
 `ExtractResult` fields: `timestamp`, `input_hash`, `word_count`, `regex_entities`,
@@ -334,11 +336,10 @@ for m in stemmer.find_matches("ALPHV ransomware exploited CVE-2024-1234 via late
 | `regenerate_dynamic_patterns` | `(keywords)` | Rebuild dynamic patterns — call after any keyword change |
 | `extract_all` | `(text) -> dict[str, list[str]]` | All pattern matches from text |
 
-Everything above, plus `SentenceTokenizer`, the Pydantic models, the exception hierarchy
+All of the above, plus `SentenceTokenizer`, the Pydantic models, the exceptions
 (`InsightExtractorError` → `ConfigLoadError`, `ModelLoadError`, `StateLoadError`,
-`PatternCompileError`), `THREAD_SEEDS`, and `REGEX_PATTERNS`, is importable from the
-top-level `insight_extractor` package. Heavy classes are lazy-imported, so
-`import insight_extractor` never pulls in torch.
+`PatternCompileError`), `THREAD_SEEDS`, and `REGEX_PATTERNS`, import from the top-level
+package. Heavy classes are lazy-imported, so `import insight_extractor` never pulls in torch.
 
 ---
 
@@ -394,10 +395,9 @@ Required CI (`ci-pass` in `.github/workflows/ci.yml`) on every push and PR:
 4. CLI smoke — the production `python -m insight_extractor` path with fake BERT
    boundaries (`HF_HUB_OFFLINE=1`); also asserts the `insight-extract` script exists
 
-Integration tests (`tests/integration/`) exercise full extractor orchestration with
-injected fake model/tokenizer doubles. They run only on `workflow_dispatch` or when a
-**push head commit** message contains `[run-integration]`; a PR commit message alone does
-not trigger them. Neither suite certifies real BERT weight compatibility.
+Integration tests (`tests/integration/`) run the full orchestration with fake model/tokenizer
+doubles, only on `workflow_dispatch` or when a **push head commit** message contains
+`[run-integration]`. Neither suite certifies real BERT weight compatibility.
 
 Local gates, same order as CI:
 
