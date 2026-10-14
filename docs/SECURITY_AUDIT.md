@@ -1,5 +1,5 @@
 # Security Audit Report — insight-extractor v2.0.0
-**Date:** 2026-06-24 (accelerate compatibility addendum: 2026-07-08)
+**Date:** 2026-06-24 (accelerate compatibility addendum: 2026-07-08; pip-audit triage addendum: 2026-10-14)
 **Scanner tools:** pip-audit, bandit, detect-secrets  
 **Scope:** `src/`, `requirements.txt`, `constraints.txt`, `.github/workflows/`
 
@@ -13,12 +13,12 @@
 | High | 0 | — |
 | Medium (SAST) | 1 | Accepted risk — see B615 below |
 | CVE — Reachable | 0 | — |
-| CVE — Unreachable | 8 | Documented below |
+| CVE — Unreachable | 11 | Documented below (8 conversion-script CVEs + 3 triaged 2026-10-14) |
 | CVE — Fixed by upgrade | 18 | Resolved: pin transformers>=4.53.0 |
 | Hardcoded secrets | 0 | Clean |
 | Unpinned GH Actions | 0 | All pinned to @vN |
 
-**Bottom line:** No reachable RCE or credential exposure. One SAST medium (HuggingFace model revision unpinned) and 8 upstream CVEs with no fix — all in checkpoint-conversion utilities not exercised by this project's inference path.
+**Bottom line:** No reachable RCE or credential exposure. One SAST medium (HuggingFace model revision unpinned), 8 upstream CVEs with no fix in checkpoint-conversion utilities, and 3 advisories triaged 2026-10-14 (path-traversal / unconsented-write classes) — none exercised by this project's inference path.
 
 ---
 
@@ -64,6 +64,50 @@
 
 **Rationale:** All 8 affect `convert_*_to_pytorch` checkpoint-conversion CLI scripts only. This project never calls these scripts or imports these model classes. The attack vector requires a user to deliberately run a conversion script against a malicious checkpoint. Not applicable to inference-only use.  
 **Review date:** 2027-01-01 or when upstream publishes a fix.
+
+---
+
+### Triaged 2026-10-14 — 3 advisories surfaced by `pip-audit` (no pin change)
+
+Pinned set at triage: `transformers==4.53.0`, `accelerate==1.14.0`,
+`sentence-transformers==5.6.0`. Verdicts below were traced against the installed
+library source, not the advisory text alone.
+
+| Advisory | Package | Type | Vulnerable entry point | Fixed In | Reachability |
+|----------|---------|------|------------------------|----------|--------------|
+| [PYSEC-2026-3804 / CVE-2026-69112](https://osv.dev/vulnerability/GHSA-4j2p-28q2-5m79) | accelerate ≤1.14.0 | Path traversal / DoS — sharded-checkpoint `weight_map` | `load_checkpoint_in_model`, `load_checkpoint_and_dispatch` | none published | UNREACHABLE |
+| [PYSEC-2026-3929 / CVE-2026-9856](https://osv.dev/vulnerability/GHSA-xrqw-3rrv-vx5w) | transformers <5.10.0 | Arbitrary file write — `chat_template` keys used as filenames | `PreTrainedTokenizerBase.save_pretrained`, `ProcessorMixin.save_pretrained` | 5.10.0 | UNREACHABLE |
+| [PYSEC-2026-4174 / CVE-2026-80047](https://osv.dev/vulnerability/GHSA-x9r9-c232-4q39) | transformers 4.49.0–5.8.1 | Unconsented remote-file write before `trust_remote_code` check | `GenerationMixin.load_custom_generate` | none for the 4.x line | UNREACHABLE |
+
+**Rationale:**
+
+- **PYSEC-2026-3804 (accelerate):** this project never imports `accelerate` directly.
+  `transformers==4.53.0` references `load_checkpoint_and_dispatch` only in a docstring
+  (`integrations/accelerate.py`) and loads sharded checkpoints with its own
+  `modeling_utils` code path; `sentence-transformers==5.6.0` imports nothing from
+  `accelerate` except its version string (`base/model_card.py`). The vulnerable
+  functions are not on any call path from `SentenceTransformer(...)` or
+  `AutoTokenizer.from_pretrained(...)`. `accelerate` stays pinned only for
+  `init_empty_weights` (see the 2026-07-08 addendum).
+- **PYSEC-2026-3929 (transformers `save_pretrained`):** the trigger is *saving* a
+  tokenizer/processor loaded from a malicious Hub repo. This project calls neither
+  `save_pretrained` nor `SentenceTransformer.save()`; in `sentence-transformers` the only
+  `save_pretrained` call sites are `save()`, `push_to_hub`, and the trainer's `_save`
+  (`base/modules/transformer.py`, `base/modules/input_module.py`, `base/trainer.py`),
+  none of which the inference path invokes. **Becomes reachable** if a future change
+  adds `model.save()` / `push_to_hub` — re-triage then, and note that the unpinned
+  model revision (B615) is what makes the malicious-repo premise plausible.
+- **PYSEC-2026-4174 (transformers `load_custom_generate`):** reachable only via
+  `GenerationMixin.generate(custom_generate=...)` or from `from_pretrained` when
+  `model.can_generate()` is true (`modeling_utils.py` ~L4872). `all-MiniLM-L6-v2` loads
+  as `BertModel`, for which `can_generate()` is `False` and `load_custom_generate` is not
+  even defined (verified in the pinned venv). This project never calls `generate()`.
+
+**Action:** none. No bump is warranted on reachability grounds; `transformers 5.10.0`
+would fix PYSEC-2026-3929 but crossing the `<5.0.0` ceiling is an ask-first major
+migration, and the other two have no fix for the pinned lines.
+**Review date:** 2027-01-01, or immediately if `save()` / `push_to_hub` / `generate()`
+usage is added, or if `accelerate` publishes a fix.
 
 ---
 
@@ -125,6 +169,15 @@ advisory not previously listed here: **`PYSEC-2026-2290`** (fixed in `5.5.0`), n
 triaged. Rolled into the same dedicated `transformers` CVE re-triage noted above — no
 verdict assigned, no pin changed.
 
+**2026-10-14 re-check:** re-ran `pip-audit` against the constraints-pinned environment
+(`transformers==4.53.0`, `accelerate==1.14.0`, `sentence-transformers==5.6.0`) during a
+dependency-doc drift pass. Same findings as above plus three net-new advisories not
+previously listed here: **`PYSEC-2026-3929`** (transformers, fixed in `5.10.0`),
+**`PYSEC-2026-4174`** (transformers, no fix version reported), and
+**`PYSEC-2026-3804`** (`accelerate`, no fix version reported — first advisory recorded
+against `accelerate` in this document). Triaged the same day — see "Triaged 2026-10-14"
+under CVE Findings above; all three `UNREACHABLE`, no pin changed.
+
 ---
 
 ## SAST Findings (bandit)
@@ -173,6 +226,25 @@ SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", revision="c9b44c9"
 +transformers==4.53.0
 +accelerate==0.34.2
 ```
+
+### 2026-10-06 addendum — sentence-transformers major bump (commit 1d45bf1, dependabot)
+
+```diff
+--- a/requirements.txt (and pyproject.toml)
++++ b/requirements.txt (and pyproject.toml)
+-sentence-transformers>=3.4.1,<4.0.0
++sentence-transformers>=5.6.0,<6.0.0
+
+--- a/constraints.txt
++++ b/constraints.txt
+-sentence-transformers==3.4.1
++sentence-transformers==5.6.0
+```
+
+No pip-audit findings were triaged with this bump itself; the three net-new advisories
+found on 2026-10-14 are triaged under CVE Findings above. `transformers==4.53.0` and
+`accelerate==1.14.0` are unchanged and the import triangle was re-verified on 2026-10-14
+(Python 3.12.3 and 3.13.16, clean venvs, `-c constraints.txt`).
 
 ### 2026-07-08 addendum — accelerate compatibility fix
 
