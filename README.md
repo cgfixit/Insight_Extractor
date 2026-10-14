@@ -47,10 +47,13 @@ Requires **Python 3.12 or newer** (CI tests 3.12 and 3.13). CPU-only inference w
 
 ```bash
 python -m venv .venv
-source .venv/bin/activate          # Windows cmd: .venv\Scripts\activate
+source .venv/bin/activate
 python -m pip install -r requirements.txt -c constraints.txt
 python -m pip install -e .
 ```
+
+On Windows, replace the activation line with `.venv\Scripts\activate` (cmd) or
+`.venv\Scripts\Activate.ps1` (PowerShell).
 
 Run the CLI on a file, or with no argument to use the built-in demo text (ransomware,
 OSINT, CVE, and AI-pipeline content — a good end-to-end install check):
