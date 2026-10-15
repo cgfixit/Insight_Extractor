@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 import insight_extractor
+from insight_extractor.exceptions import ModelLoadError
 from insight_extractor.stemmer import DynamicKeywordStemmer
 from insight_extractor.tokenizer import SentenceTokenizer
 
@@ -55,3 +56,13 @@ def test_tokenize_sentences_and_empty_text() -> None:
         "First sentence.",
         "Second sentence!",
     ]
+
+
+def test_tokenizer_property_raises_when_no_tokenizer_files(monkeypatch: pytest.MonkeyPatch) -> None:
+    import transformers
+
+    monkeypatch.setattr(transformers.AutoTokenizer, "from_pretrained", lambda *_a, **_k: None)
+    tokenizer = SentenceTokenizer("no/tokenizer-here")
+
+    with pytest.raises(ModelLoadError, match="No tokenizer found"):
+        _ = tokenizer.tokenizer

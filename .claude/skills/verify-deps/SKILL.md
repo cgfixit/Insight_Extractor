@@ -55,7 +55,8 @@ grep -rn "4\.44\.2\|3\.0\.1\|<4\.45\|0\.26\.0\|0\.34\.2" --include='*.md' --incl
 
 (That list is this repo's known historical pins as of 2026-08 — `transformers` capped
 at `<4.45`, `transformers==4.44.2`, `sentence-transformers==3.0.1`,
-`accelerate==0.26.0`, `accelerate==0.34.2`, `sentence-transformers==3.4.1`. If
+`accelerate==0.26.0`, `accelerate==0.34.2`, `sentence-transformers==3.4.1`,
+`transformers==4.53.0` / `<5.0.0`. If
 `constraints.txt` has moved further since
 this skill was written, extend the grep with whatever pin it now shows.)
 

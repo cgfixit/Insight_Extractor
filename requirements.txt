@@ -2,13 +2,16 @@
 # See constraints.txt for pinned known-good versions.
 #
 # DEPENDENCY NOTES:
-# - transformers: pinned >=4.53.0 — clears all CVEs fixable upstream (ReDoS, RCE batches)
+# - transformers: floor >=5.10.0 — clears every advisory with an upstream fix as of 2026-10-15,
+#   including PYSEC-2026-2288/2289/2290 (fixed 5.0.0/5.3.0/5.5.0), PYSEC-2026-3929
+#   (save_pretrained path traversal, fixed 5.10.0) and PYSEC-2026-4174 (load_custom_generate
+#   unconsented write, fixed after 5.8.1). Ceiling <6.0.0 — untested major.
 #   Unfixed upstream: CVE-2025-14920/14921/14924/14926/14927/14928/14929/14930 (checkpoint
 #   conversion deserialization — only triggered when converting old-format model checkpoints,
 #   NOT during normal inference with all-MiniLM-L6-v2)
 # - accelerate: REQUIRED — provides init_empty_weights used by sentence-transformers.
 #   Missing accelerate causes: ModelLoadError: name 'init_empty_weights' is not defined
-#   Floor raised to >=1.3.0 — transformers>=4.53.0's trainer imports
+#   Floor raised to >=1.3.0 — transformers' trainer (4.53+) imports
 #   TorchTensorParallelPlugin from accelerate.utils, which accelerate<1.3.0 lacks:
 #   ImportError: cannot import name 'TorchTensorParallelPlugin' from 'accelerate.utils'
 #   (fires on any `import sentence_transformers`, so it breaks at package import time,
@@ -20,6 +23,6 @@ sentence-transformers>=5.6.0,<6.0.0
 scikit-learn>=1.5.0
 pyyaml>=6.0
 pydantic>=2.0
-transformers>=4.53.0,<5.0.0
+transformers>=5.10.0,<6.0.0
 numpy>=1.26.0
 accelerate>=1.3.0

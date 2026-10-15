@@ -270,8 +270,10 @@ produced `ModelLoadError: name 'init_empty_weights' is not defined` — the miss
   `dependencies`. Never change one without the others.
 - `accelerate` looks unused (nothing imports it) but is **required** at runtime by
   sentence-transformers model loading. Do not "clean it up".
-- `transformers` must stay `>=4.53.0,<5.0.0` — the floor clears 18 CVEs (see
-  `docs/SECURITY_AUDIT.md`), the ceiling avoids untested majors.
+- `transformers` must stay `>=5.10.0,<6.0.0` — the floor clears every advisory with an
+  upstream fix as of 2026-10-15 (the 18 CVEs closed by 4.53.0 plus the 5.x-only fixes for
+  PYSEC-2026-2288/2289/2290/3929/4174, see `docs/SECURITY_AUDIT.md`); the ceiling avoids
+  untested majors. Migrated from `>=4.53.0,<5.0.0` on 2026-10-15.
 - **Previously broken pin (reproduced 2026-07, Linux/py3.12; fixed in `312096b`):** the
   constraints set `transformers==4.53.0` + `accelerate==0.34.2` could not import together —
   `ImportError: cannot import name 'TorchTensorParallelPlugin' from 'accelerate.utils'`
