@@ -75,7 +75,8 @@ the README alone — this repo once shipped a phantom-API test suite, commit `40
    consistent across `requirements.txt` / `constraints.txt` / `pyproject.toml`; input
    validation on config loading (`.toml`/`.yaml`/`.yml`/`.json`, dict-at-top-level).
 4. **Dependency-risk** — the transformers/sentence-transformers/accelerate triangle:
-   `transformers>=4.53.0,<5.0.0` (floor clears 18 CVEs per `docs/SECURITY_AUDIT.md`);
+   `transformers>=5.10.0,<6.0.0` (floor clears every fixed advisory per
+   `docs/SECURITY_AUDIT.md`; migrated from `>=4.53.0,<5.0.0` on 2026-10-15);
    `accelerate` is load-bearing despite zero imports (sentence-transformers needs it —
    `ModelLoadError: name 'init_empty_weights' is not defined` without it); watch for
    regression to the previously broken pin `transformers==4.53.0` + `accelerate==0.34.2`
