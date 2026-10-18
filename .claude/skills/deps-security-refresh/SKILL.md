@@ -20,10 +20,11 @@ that consistent.
 - `accelerate` is **load-bearing**: nothing imports it, but sentence-transformers'
   model loading needs it at runtime. Removing it reintroduces the
   `init_empty_weights` crash. Never "clean it up" as unused.
-- `transformers` floor is `>=4.53.0` — below that, 18 fixed CVEs reopen (ReDoS + RCE
-  batches, see the audit doc). Ceiling `<5.0.0` — untested major.
-- `sentence-transformers` stays `>=3.4.1,<4.0.0` unless the task is explicitly a major
-  migration (that's an ask-first change).
+- `transformers` floor is `>=5.10.0` — below that, fixed advisories reopen (the 18 CVEs
+  closed by 4.53.0 plus PYSEC-2026-2288/2289/2290/3929/4174, see the audit doc). Ceiling
+  `<6.0.0` — untested major. Migrated from `>=4.53.0,<5.0.0` on 2026-10-15.
+- `sentence-transformers` stays `>=5.6.0,<6.0.0` (bumped from `>=3.4.1,<4.0.0` in commit
+  `1d45bf1`) unless the task is explicitly a major migration (that's an ask-first change).
 - Bumping pins beyond what the task explicitly requires is an **ask-first** action.
 
 ## Step 1 — Establish scope

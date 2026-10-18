@@ -1,5 +1,5 @@
 # Security Audit Report — insight-extractor v2.0.0
-**Date:** 2026-06-24 (accelerate compatibility addendum: 2026-07-08)
+**Date:** 2026-06-24 (accelerate compatibility addendum: 2026-07-08; pip-audit triage addendum: 2026-10-14; transformers 5.x migration: 2026-10-15)
 **Scanner tools:** pip-audit, bandit, detect-secrets  
 **Scope:** `src/`, `requirements.txt`, `constraints.txt`, `.github/workflows/`
 
@@ -13,12 +13,13 @@
 | High | 0 | — |
 | Medium (SAST) | 1 | Accepted risk — see B615 below |
 | CVE — Reachable | 0 | — |
-| CVE — Unreachable | 8 | Documented below |
-| CVE — Fixed by upgrade | 18 | Resolved: pin transformers>=4.53.0 |
+| CVE — Unreachable | 1 | PYSEC-2026-3804 (`accelerate`, no upstream fix) — see "Triaged 2026-10-14" |
+| CVE — Fixed by upgrade | 23 | 18 via transformers 4.53.0 (2026-06); 5 via transformers 5.19.0 (2026-10-15) |
+| CVE — No longer reported | 8 | CVE-2025-1492x conversion-script series: not reported by `pip-audit` against transformers 5.19.0 |
 | Hardcoded secrets | 0 | Clean |
 | Unpinned GH Actions | 0 | All pinned to @vN |
 
-**Bottom line:** No reachable RCE or credential exposure. One SAST medium (HuggingFace model revision unpinned) and 8 upstream CVEs with no fix — all in checkpoint-conversion utilities not exercised by this project's inference path.
+**Bottom line:** No reachable RCE or credential exposure. After the 2026-10-15 migration to `transformers==5.19.0`, `pip-audit` against the constraints-pinned environment reports a single finding — PYSEC-2026-3804 in `accelerate` (no upstream fix, triaged `UNREACHABLE`). One SAST medium (HuggingFace model revision unpinned) remains accepted.
 
 ---
 
@@ -64,6 +65,75 @@
 
 **Rationale:** All 8 affect `convert_*_to_pytorch` checkpoint-conversion CLI scripts only. This project never calls these scripts or imports these model classes. The attack vector requires a user to deliberately run a conversion script against a malicious checkpoint. Not applicable to inference-only use.  
 **Review date:** 2027-01-01 or when upstream publishes a fix.
+**2026-10-15 update:** `pip-audit` no longer reports any of these eight against
+`transformers==5.19.0` (the advisory ranges exclude it). Table retained for history; the
+accepted-risk status is moot on the current pin.
+
+---
+
+### Resolved by migrating transformers → 5.19.0 (2026-10-15, 5 advisories)
+
+| Advisory | Type | Vulnerable entry point | Fixed In |
+|----------|------|------------------------|----------|
+| [PYSEC-2026-2288 / CVE-2026-1839](https://osv.dev/vulnerability/GHSA-69w3-r845-3855) | RCE — `Trainer._load_rng_state()` deserialization | `Trainer` | 5.0.0 |
+| [PYSEC-2026-2289 / CVE-2026-4372](https://osv.dev/vulnerability/PYSEC-2026-2289) | Not triaged while on 4.x (see untriaged notes below) | — | 5.3.0 |
+| [PYSEC-2026-2290](https://osv.dev/vulnerability/PYSEC-2026-2290) | Not triaged while on 4.x (see untriaged notes below) | — | 5.5.0 |
+| [PYSEC-2026-3929 / CVE-2026-9856](https://osv.dev/vulnerability/GHSA-xrqw-3rrv-vx5w) | Arbitrary file write — `chat_template` keys as filenames | `save_pretrained` | 5.10.0 |
+| [PYSEC-2026-4174 / CVE-2026-80047](https://osv.dev/vulnerability/GHSA-x9r9-c232-4q39) | Unconsented remote-file write before `trust_remote_code` check | `load_custom_generate` | 5.9.0 (advisory: ≤5.8.1 affected) |
+
+**Rationale:** all five were either `UNREACHABLE` for this project's inference path or
+untriaged with no reachable entry point identified; the migration closes them regardless.
+`transformers` floor raised to `>=5.10.0` so none can reopen within the allowed range.
+**Code change required by the migration:** transformers 5.x ships `py.typed`;
+`AutoTokenizer.from_pretrained` is typed `TokenizersBackend | None`, `encode` → `list[int]`,
+`decode` → `str | list[str]`. `src/insight_extractor/tokenizer.py` now annotates with
+`PreTrainedTokenizerBase`, raises `ModelLoadError` on a `None` tokenizer, narrows `decode`,
+and drops three `# type: ignore` comments that became unused under `mypy --strict`.
+
+---
+
+### Triaged 2026-10-14 — 3 advisories surfaced by `pip-audit` (no pin change)
+
+Pinned set at triage: `transformers==4.53.0`, `accelerate==1.14.0`,
+`sentence-transformers==5.6.0`. Verdicts below were traced against the installed
+library source, not the advisory text alone.
+
+| Advisory | Package | Type | Vulnerable entry point | Fixed In | Reachability |
+|----------|---------|------|------------------------|----------|--------------|
+| [PYSEC-2026-3804 / CVE-2026-69112](https://osv.dev/vulnerability/GHSA-4j2p-28q2-5m79) | accelerate ≤1.14.0 | Path traversal / DoS — sharded-checkpoint `weight_map` | `load_checkpoint_in_model`, `load_checkpoint_and_dispatch` | none published | UNREACHABLE |
+| [PYSEC-2026-3929 / CVE-2026-9856](https://osv.dev/vulnerability/GHSA-xrqw-3rrv-vx5w) | transformers <5.10.0 | Arbitrary file write — `chat_template` keys used as filenames | `PreTrainedTokenizerBase.save_pretrained`, `ProcessorMixin.save_pretrained` | 5.10.0 | UNREACHABLE |
+| [PYSEC-2026-4174 / CVE-2026-80047](https://osv.dev/vulnerability/GHSA-x9r9-c232-4q39) | transformers 4.49.0–5.8.1 | Unconsented remote-file write before `trust_remote_code` check | `GenerationMixin.load_custom_generate` | none for the 4.x line | UNREACHABLE |
+
+**Rationale:**
+
+- **PYSEC-2026-3804 (accelerate):** this project never imports `accelerate` directly.
+  `transformers==4.53.0` references `load_checkpoint_and_dispatch` only in a docstring
+  (`integrations/accelerate.py`) and loads sharded checkpoints with its own
+  `modeling_utils` code path; `sentence-transformers==5.6.0` imports nothing from
+  `accelerate` except its version string (`base/model_card.py`). The vulnerable
+  functions are not on any call path from `SentenceTransformer(...)` or
+  `AutoTokenizer.from_pretrained(...)`. `accelerate` stays pinned only for
+  `init_empty_weights` (see the 2026-07-08 addendum).
+- **PYSEC-2026-3929 (transformers `save_pretrained`):** the trigger is *saving* a
+  tokenizer/processor loaded from a malicious Hub repo. This project calls neither
+  `save_pretrained` nor `SentenceTransformer.save()`; in `sentence-transformers` the only
+  `save_pretrained` call sites are `save()`, `push_to_hub`, and the trainer's `_save`
+  (`base/modules/transformer.py`, `base/modules/input_module.py`, `base/trainer.py`),
+  none of which the inference path invokes. **Becomes reachable** if a future change
+  adds `model.save()` / `push_to_hub` — re-triage then, and note that the unpinned
+  model revision (B615) is what makes the malicious-repo premise plausible.
+- **PYSEC-2026-4174 (transformers `load_custom_generate`):** reachable only via
+  `GenerationMixin.generate(custom_generate=...)` or from `from_pretrained` when
+  `model.can_generate()` is true (`modeling_utils.py` ~L4872). `all-MiniLM-L6-v2` loads
+  as `BertModel`, for which `can_generate()` is `False` and `load_custom_generate` is not
+  even defined (verified in the pinned venv). This project never calls `generate()`.
+
+**Action (as of 2026-10-14):** none; a bump past the `<5.0.0` ceiling was ask-first.
+**2026-10-15 update:** the owner approved the major migration; `transformers==5.19.0`
+closes PYSEC-2026-3929 and PYSEC-2026-4174 (see the table above). PYSEC-2026-3804
+(`accelerate`) remains the only open finding and is still `UNREACHABLE`.
+**Review date:** 2027-01-01, or immediately if `save()` / `push_to_hub` / `generate()`
+usage is added, or if `accelerate` publishes a fix.
 
 ---
 
@@ -125,6 +195,15 @@ advisory not previously listed here: **`PYSEC-2026-2290`** (fixed in `5.5.0`), n
 triaged. Rolled into the same dedicated `transformers` CVE re-triage noted above — no
 verdict assigned, no pin changed.
 
+**2026-10-14 re-check:** re-ran `pip-audit` against the constraints-pinned environment
+(`transformers==4.53.0`, `accelerate==1.14.0`, `sentence-transformers==5.6.0`) during a
+dependency-doc drift pass. Same findings as above plus three net-new advisories not
+previously listed here: **`PYSEC-2026-3929`** (transformers, fixed in `5.10.0`),
+**`PYSEC-2026-4174`** (transformers, no fix version reported), and
+**`PYSEC-2026-3804`** (`accelerate`, no fix version reported — first advisory recorded
+against `accelerate` in this document). Triaged the same day — see "Triaged 2026-10-14"
+under CVE Findings above; all three `UNREACHABLE`, no pin changed.
+
 ---
 
 ## SAST Findings (bandit)
@@ -173,6 +252,49 @@ SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", revision="c9b44c9"
 +transformers==4.53.0
 +accelerate==0.34.2
 ```
+
+### 2026-10-15 — transformers 5.x migration (owner-approved major bump)
+
+```diff
+--- a/requirements.txt (and pyproject.toml)
++++ b/requirements.txt (and pyproject.toml)
+-transformers>=4.53.0,<5.0.0
++transformers>=5.10.0,<6.0.0
+
+--- a/constraints.txt
++++ b/constraints.txt
+-transformers==4.53.0
++transformers==5.19.0
+```
+
+`sentence-transformers==5.6.0` (declares `transformers<6.0.0,>=4.41.0`) and
+`accelerate==1.14.0` unchanged. Verified on clean constraints-pinned venvs, Python 3.12.3
+and 3.13.16: import triangle (`init_empty_weights`, `TorchTensorParallelPlugin`,
+`SentenceTransformer`) OK; ruff, ruff format, mypy --strict, 122 unit tests pass on both.
+`pip-audit` against the pinned environment: 1 finding (PYSEC-2026-3804, `accelerate`).
+Live weight load exercised on Python 3.12 (`SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")`,
+`encode` → shape (1, 384), `AutoTokenizer` → `BertTokenizer`, full `extract()` round-trip,
+no deprecation warnings). Note: the Hub's xet transport was blocked in the sandbox;
+`HF_HUB_DISABLE_XET=1` fell back to plain HTTPS — unrelated to the pin set.
+
+### 2026-10-06 addendum — sentence-transformers major bump (commit 1d45bf1, dependabot)
+
+```diff
+--- a/requirements.txt (and pyproject.toml)
++++ b/requirements.txt (and pyproject.toml)
+-sentence-transformers>=3.4.1,<4.0.0
++sentence-transformers>=5.6.0,<6.0.0
+
+--- a/constraints.txt
++++ b/constraints.txt
+-sentence-transformers==3.4.1
++sentence-transformers==5.6.0
+```
+
+No pip-audit findings were triaged with this bump itself; the three net-new advisories
+found on 2026-10-14 are triaged under CVE Findings above. `transformers==4.53.0` and
+`accelerate==1.14.0` are unchanged and the import triangle was re-verified on 2026-10-14
+(Python 3.12.3 and 3.13.16, clean venvs, `-c constraints.txt`).
 
 ### 2026-07-08 addendum — accelerate compatibility fix
 
