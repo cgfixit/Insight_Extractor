@@ -1,8 +1,32 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Annotated, Any
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, StrictStr, field_validator
+
+from insight_extractor.config import KeywordCategory, StemMode
+
+
+class _SavedState(BaseModel):
+    """Validate persisted fields without coercing malformed JSON containers or scalars."""
+
+    thread_keywords: list[StrictStr] = Field(default_factory=list)
+    keyword_freq: dict[str, Annotated[int, Field(strict=True, ge=0)]] = Field(default_factory=dict)
+    keyword_categories: dict[str, KeywordCategory] = Field(default_factory=dict)
+    stem_mode: StemMode
+    similarity_threshold: Annotated[float, Field(strict=True, allow_inf_nan=False)]
+    model_name: Annotated[str, Field(strict=True, min_length=1)]
+
+    @field_validator("keyword_categories", mode="before")
+    @classmethod
+    def remap_legacy_categories(cls, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {
+                key: KeywordCategory.AI_SAFETY.value if category == "child_safety" else category
+                for key, category in value.items()
+            }
+        return value
 
 
 class MatchInfo(BaseModel):

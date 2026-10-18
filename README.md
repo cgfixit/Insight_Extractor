@@ -252,6 +252,20 @@ extractor.save_state(state_path)            # -> None
 loaded = extractor.load_state(state_path)   # -> bool
 ```
 
+`load_state()` returns `False` for a missing file. It validates the full JSON
+object and prepares keyword patterns before applying any state. Malformed JSON,
+invalid UTF-8, invalid field types/settings, and pattern-compilation failures raise
+`StateLoadError`; the existing keywords, counts, categories, model/tokenizer caches,
+embeddings, and compiled runtime remain unchanged.
+
+Saved keywords must be strings, frequencies nonnegative integers, categories and
+stem mode supported enum values, the threshold a finite JSON number, and the model
+name a nonempty string. Missing keyword collections default to empty; omitted
+settings retain their current values. Legacy `child_safety` categories map to
+`ai_safety`, and extra metadata is ignored. Valid loads remain lazy: embeddings are
+invalidated, and a changed model name also clears cached model/tokenizer objects.
+The CLI reports invalid state as `error: Failed to load state ...` and exits 1.
+
 `ExtractResult` fields: `timestamp`, `input_hash`, `word_count`, `regex_entities`,
 `dynamic_keyword_matches`, `semantic_keywords`, `key_sentences`,
 `newly_expanded_keywords`, `total_tracked_keywords`, `keyword_stats`.
