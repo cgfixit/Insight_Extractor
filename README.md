@@ -339,6 +339,19 @@ for m in stemmer.find_matches("ALPHV ransomware exploited CVE-2024-1234 via late
 | `regenerate_dynamic_patterns` | `(keywords)` | Rebuild dynamic patterns — call after any keyword change |
 | `extract_all` | `(text) -> dict[str, list[str]]` | All pattern matches from text |
 
+### `SentenceTokenizer`
+
+`chunk_text(text, max_tokens=512, overlap=50)` returns sliding token windows.
+`max_tokens` must be a positive integer; `overlap` must be an integer in
+`[0, max_tokens)`. Invalid arguments raise `ValueError` before loading a tokenizer,
+including for empty or short text. When using a budget of 50 or less, pass an
+explicit overlap below that budget. Zero overlap covers every token exactly once,
+including the final partial chunk.
+
+`tokenize_sentences(text, max_tokens=512)` uses the same budget validation and
+splits oversized sentences with `min(50, max_tokens - 1)` overlapping tokens.
+Budgets as small as one token are supported. Tokenizer loading remains lazy.
+
 All of the above, plus `SentenceTokenizer`, the Pydantic models, the exceptions
 (`InsightExtractorError` → `ConfigLoadError`, `ModelLoadError`, `StateLoadError`,
 `PatternCompileError`), `THREAD_SEEDS`, and `REGEX_PATTERNS`, import from the top-level

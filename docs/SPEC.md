@@ -236,8 +236,19 @@ class SentenceTokenizer:
         """
         Split text into chunks of max_tokens with optional overlap.
         Uses the model's tokenizer for accurate token counting.
+        Invalid budgets/overlap raise ValueError before tokenization.
         """
+        if isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or max_tokens <= 0:
+            raise ValueError("max_tokens must be a positive integer")
+        if (
+            isinstance(overlap, bool)
+            or not isinstance(overlap, int)
+            or not 0 <= overlap < max_tokens
+        ):
+            raise ValueError("overlap must be an integer in [0, max_tokens)")
         tokens = self.tokenizer.encode(text, add_special_tokens=False)
+        if len(tokens) <= max_tokens:
+            return [text]
         chunks: list[str] = []
         start = 0
         while start < len(tokens):
@@ -245,9 +256,16 @@ class SentenceTokenizer:
             chunk_tokens = tokens[start:end]
             chunk_text = self.tokenizer.decode(chunk_tokens, skip_special_tokens=True)
             chunks.append(chunk_text)
-            start += max_tokens - overlap
+            if end == len(tokens):
+                break
+            start = end - overlap
         return chunks
 ```
+
+The live `tokenize_sentences` implementation validates a positive integer budget,
+including for empty input, and uses `overlap=min(50, max_tokens - 1)` when chunking
+oversized sentences. Zero-overlap windows preserve the entire token sequence;
+chunking stops as soon as a window reaches the final token.
 
 ---
 
