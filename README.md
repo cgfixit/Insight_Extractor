@@ -102,7 +102,7 @@ fully pinned local setup.
 Both errors trace to the `accelerate` package and both have the same fix:
 
 ```bash
-python -m pip install "accelerate>=1.3.0" --upgrade
+python -m pip install "accelerate>=1.15.0" --upgrade
 ```
 
 | Error | Cause |
@@ -110,8 +110,8 @@ python -m pip install "accelerate>=1.3.0" --upgrade
 | `ModelLoadError: name 'init_empty_weights' is not defined` | `accelerate` not installed; `sentence-transformers` needs it at model-load time |
 | `ImportError: cannot import name 'TorchTensorParallelPlugin' from 'accelerate.utils'` | `accelerate < 1.3.0` alongside `transformers >= 4.53.0`; fires on `import sentence_transformers`, not just on model load |
 
-`requirements.txt` and `constraints.txt` already pin `accelerate>=1.3.0` (currently
-`1.14.0`), so fresh installs are unaffected. The error only appears with an older
+`requirements.txt` requires `accelerate>=1.15.0` and `constraints.txt` pins
+`1.15.0`, so fresh installs are unaffected. The error only appears with an older
 `accelerate` left over from a previous environment.
 
 ---

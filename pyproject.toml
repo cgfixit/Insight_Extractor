@@ -40,8 +40,8 @@ classifiers = [
 # - transformers floor >=5.10.0 clears every advisory with an upstream fix as of 2026-10-15
 #   (PYSEC-2026-3929 save_pretrained path traversal fixed in 5.10.0; PYSEC-2026-4174
 #   load_custom_generate unconsented write fixed after 5.8.1). Ceiling <6.0.0 — untested major.
-# - accelerate floor >=1.3.0 — transformers' trainer module imports TorchTensorParallelPlugin
-#   from accelerate.utils, absent before accelerate 1.3.0.
+# - accelerate floor >=1.15.0 fixes PYSEC-2026-3804 and retains
+#   TorchTensorParallelPlugin, absent before accelerate 1.3.0.
 dependencies = [
     "sentence-transformers>=5.6.0,<6.0.0",
     "scikit-learn>=1.5.0",
@@ -49,7 +49,7 @@ dependencies = [
     "pydantic>=2.0",
     "transformers>=5.10.0,<6.0.0",
     "numpy>=1.26.0",
-    "accelerate>=1.3.0",
+    "accelerate>=1.15.0",
 ]
 
 [project.optional-dependencies]

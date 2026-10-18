@@ -20,7 +20,7 @@ that consistent.
 - `accelerate` is **load-bearing**: nothing imports it, but sentence-transformers'
   model loading needs it at runtime. Removing it reintroduces the
   `init_empty_weights` crash. Never "clean it up" as unused.
-- `transformers` floor is `>=5.10.0` — below that, fixed advisories reopen (the 18 CVEs
+- `transformers` floor is `>=5.10.0` — below that, fixed advisories reopen (the 14 listed CVEs
   closed by 4.53.0 plus PYSEC-2026-2288/2289/2290/3929/4174, see the audit doc). Ceiling
   `<6.0.0` — untested major. Migrated from `>=4.53.0,<5.0.0` on 2026-10-15.
 - `sentence-transformers` stays `>=5.6.0,<6.0.0` (bumped from `>=3.4.1,<4.0.0` in commit
@@ -75,7 +75,7 @@ Known failure this check catches (fixed 2026-07-08 in commit 312096b — verify 
 fixed on every bump): `constraints.txt` previously pinned `transformers==4.53.0` +
 `accelerate==0.34.2`, which fails at import with `ImportError: cannot import name
 'TorchTensorParallelPlugin'` — transformers 4.53's trainer needs `accelerate>=1.3.0`.
-`constraints.txt` now pins `accelerate==1.14.0`. CI never caught this because it
+`constraints.txt` now pins `accelerate==1.15.0`. CI never caught this because it
 installs without constraints (`pip install -e ".[dev]"`), so a constraints-pinned
 install is the only thing that exercises this triangle — re-run this check after any
 accelerate/transformers/sentence-transformers bump.

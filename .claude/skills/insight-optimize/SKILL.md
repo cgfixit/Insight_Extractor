@@ -80,7 +80,7 @@ the README alone — this repo once shipped a phantom-API test suite, commit `40
    `accelerate` is load-bearing despite zero imports (sentence-transformers needs it —
    `ModelLoadError: name 'init_empty_weights' is not defined` without it); watch for
    regression to the previously broken pin `transformers==4.53.0` + `accelerate==0.34.2`
-   (fixed 2026-07-08 in commit 312096b; `constraints.txt` now pins `accelerate==1.14.0`)
+   (fixed 2026-07-08 in commit 312096b; `constraints.txt` now pins `accelerate==1.15.0`)
    → `ImportError: cannot import name 'TorchTensorParallelPlugin'` (lowering the floor
    again is ask-first); `pip-audit` surface with reachability verdicts in
    `docs/SECURITY_AUDIT.md`.
