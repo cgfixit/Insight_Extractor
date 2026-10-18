@@ -1,8 +1,7 @@
 # Insight_Extractor
 
 Turn a wall of threat-intel, OSINT, or security text into structured, typed insights in one
-call. `insight-extractor` is a Python 3.12+ library that layers three complementary
-pipelines over a single input:
+call:
 
 1. **Regex entity extraction** — 15 pre-built IOC patterns (CVEs, hashes, IPs, wallets,
    `.onion` domains, ports, …). No model required.
