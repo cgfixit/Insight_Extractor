@@ -119,6 +119,12 @@ class PatternLabel(StrEnum):
 
 ## Module: `models.py`
 
+`ExtractResult.regex_entities` contains static matches; `dynamic_keyword_matches`
+contains only `DYNAMIC_KEYWORD` matches. Static matching is case-insensitive in both
+`InsightExtractor.extract_regex_entities()` and `KeywordPatternRegistry.extract_all()`
+and preserves matched spelling. The registry retains its combined static + dynamic
+result contract. Disabling dynamic regex leaves static extraction available.
+
 All models use Pydantic `BaseModel` v2 with `from __future__ import annotations`.
 
 ```python

@@ -154,6 +154,9 @@ pause
 
 These run on every input with no BERT model required. Labels are `PatternLabel` members
 (a `StrEnum`), so `"CVE_ID" in result.regex_entities` works with plain strings.
+Static patterns are case-insensitive in both `extract_regex_entities()` and
+`KeywordPatternRegistry.extract_all()`; matches preserve their original spelling
+and order. For example, both `CVE-2026-1234` and `cve-2026-5678` are extracted.
 
 | Pattern Label | Matches | Example |
 |---------------|---------|---------|
@@ -224,6 +227,12 @@ in `EXACT`/`STEM` because `\b` needs a word/non-word transition; use `REGEX` for
 Interior punctuation is fine (`zero-day` matches normally).
 
 ### Extraction methods
+
+`extract_dynamic_entities()` and `ExtractResult.dynamic_keyword_matches` contain
+only the `DYNAMIC_KEYWORD` label, or an empty dict when no keyword matches.
+Static labels appear in `regex_entities`. Disabling dynamic regex returns empty
+dynamic results while leaving static extraction available.
+`KeywordPatternRegistry.extract_all()` retains its combined static + dynamic contract.
 
 ```python
 # Full pipeline: regex + dynamic + semantic + key sentences + keyword expansion
