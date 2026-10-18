@@ -149,6 +149,42 @@ def test_regex_entities_reuse_compiled_patterns(tmp_path: Path) -> None:
     assert compiled
 
 
+@pytest.mark.parametrize("enable_dynamic", [False, True])
+def test_static_case_policy_and_dynamic_result_labels(tmp_path: Path, enable_dynamic: bool) -> None:
+    extractor = InsightExtractor(
+        seed_keywords=["ransomware"],
+        enable_dynamic_regex=enable_dynamic,
+        output_dir=tmp_path,
+    )
+    text = "Ransomwares CVE-2026-1234 cve-2026-5678 PORT 4444 Report.EXE Example.COM"
+
+    static = extractor.extract_regex_entities(text)
+    combined = extractor.pattern_registry.extract_all(text)
+    dynamic = extractor.extract_dynamic_entities(text)
+
+    assert static["CVE_ID"] == ["CVE-2026-1234", "cve-2026-5678"]
+    assert static["PORT_NUMBER"] == ["4444"]
+    assert static["FILE_EXTENSION"] == [".EXE"]
+    assert static["DOMAIN"] == ["Example.COM"]
+    assert {
+        label: matches for label, matches in combined.items() if label != "DYNAMIC_KEYWORD"
+    } == static
+    assert dynamic == ({"DYNAMIC_KEYWORD": ["Ransomwares"]} if enable_dynamic else {})
+    assert extractor.extract_dynamic_entities("cve-2026-5678") == {}
+    assert extractor._model is None
+    assert extractor._tokenizer is None
+
+
+def test_full_result_separates_static_and_dynamic_matches(tmp_path: Path) -> None:
+    extractor = build_extractor(tmp_path)
+
+    result = extractor.extract("Ransomware exploited cve-2026-5678.", update_keywords=False)
+
+    assert result.regex_entities["CVE_ID"] == ["cve-2026-5678"]
+    assert set(result.dynamic_keyword_matches) == {"DYNAMIC_KEYWORD"}
+    assert "Ransomware" in result.dynamic_keyword_matches["DYNAMIC_KEYWORD"]
+
+
 def test_keyword_positions_resolve_stemmed_matches(tmp_path: Path) -> None:
     extractor = InsightExtractor(seed_keywords=["ransomware"], output_dir=tmp_path)
 

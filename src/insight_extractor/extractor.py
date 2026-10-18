@@ -19,7 +19,7 @@ from sentence_transformers import SentenceTransformer
 from sklearn.feature_extraction.text import TfidfVectorizer  # type: ignore[import-untyped]
 from sklearn.metrics.pairwise import cosine_similarity  # type: ignore[import-untyped]
 
-from insight_extractor.config import KeywordCategory, StemMode
+from insight_extractor.config import KeywordCategory, PatternLabel, StemMode
 from insight_extractor.constants import REGEX_PATTERNS, THREAD_SEEDS
 from insight_extractor.exceptions import ConfigLoadError, ModelLoadError, StateLoadError
 from insight_extractor.models import (
@@ -698,12 +698,12 @@ class InsightExtractor:
     # Regex entity extraction
     # ------------------------------------------------------------------
     def extract_regex_entities(self, text: str) -> dict[str, list[str]]:
-        """Run static REGEX_PATTERNS against *text* and deduplicate matches."""
+        """Run static patterns case-insensitively, preserving matched spelling and order."""
         results: dict[str, list[str]] = {}
         for label, pattern in REGEX_PATTERNS.items():
             compiled = self._compiled_regex_patterns.get(pattern)
             if compiled is None:
-                compiled = re.compile(pattern)
+                compiled = re.compile(pattern, re.IGNORECASE)
                 self._compiled_regex_patterns[pattern] = compiled
             matches = compiled.findall(text)
             # Deduplicate while preserving order
@@ -728,10 +728,14 @@ class InsightExtractor:
     # Dynamic entity extraction
     # ------------------------------------------------------------------
     def extract_dynamic_entities(self, text: str) -> dict[str, list[str]]:
-        """Delegate to the KeywordPatternRegistry if dynamic regex is enabled."""
+        """Return only DYNAMIC_KEYWORD matches when dynamic regex is enabled."""
         if not self.enable_dynamic_regex:
             return {}
-        return self.pattern_registry.extract_all(text)
+        return {
+            label: matches
+            for label, matches in self.pattern_registry.extract_all(text).items()
+            if label == PatternLabel.DYNAMIC_KEYWORD
+        }
 
     # ------------------------------------------------------------------
     # Semantic keyword extraction
