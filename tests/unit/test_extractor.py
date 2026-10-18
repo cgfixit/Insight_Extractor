@@ -251,6 +251,169 @@ def test_load_state_restores_runtime_settings_lazily(
     assert restored.extract_semantic_keywords("ransomware incident response details")
 
 
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        None,
+        [],
+        42,
+        "state",
+        True,
+        {"thread_keywords": "replacement"},
+        {"thread_keywords": {"replacement": 1}},
+        {"thread_keywords": [42]},
+        {"thread_keywords": [None]},
+        {"keyword_freq": []},
+        {"keyword_freq": None},
+        {"keyword_freq": {"replacement": "2"}},
+        {"keyword_freq": {"replacement": 2.5}},
+        {"keyword_freq": {"replacement": True}},
+        {"keyword_freq": {"replacement": -1}},
+        {"keyword_categories": []},
+        {"keyword_categories": None},
+        {"keyword_categories": {"replacement": "invalid"}},
+        {"keyword_categories": {"replacement": []}},
+        {"stem_mode": "invalid"},
+        {"stem_mode": None},
+        {"stem_mode": []},
+        {"similarity_threshold": "invalid"},
+        {"similarity_threshold": "0.2"},
+        {"similarity_threshold": None},
+        {"similarity_threshold": True},
+        {"similarity_threshold": []},
+        {"similarity_threshold": float("nan")},
+        {"similarity_threshold": float("inf")},
+        {"similarity_threshold": -float("inf")},
+        {"model_name": 42},
+        {"model_name": None},
+        {"model_name": ""},
+        {"model_name": []},
+        {"stem_mode": "regex", "thread_keywords": ["["]},
+        {"stem_mode": "regex", "thread_keywords": ["a{999999999999999999999999999}"]},
+        b"{not json",
+        b"\xff",
+    ],
+)
+def test_load_state_failure_preserves_live_state(tmp_path: Path, invalid: object) -> None:
+    extractor = build_extractor(tmp_path)
+    extractor._keyword_embeddings = np.array([[1.0, 0.0]] * len(extractor.thread_keywords))
+    extractor._keyword_embeddings_dirty = False
+    original_matches = extractor.extract_dynamic_entities("Ransomware exploit")
+    extractor.extract_regex_entities("CVE-2026-1234")
+    original_attributes = extractor.__dict__.copy()
+    original_keywords = list(extractor.thread_keywords)
+    original_frequencies = extractor.keyword_freq.copy()
+    original_categories = extractor.keyword_categories.copy()
+    original_embeddings = extractor._keyword_embeddings.copy()
+    original_patterns = extractor._compiled_regex_patterns.copy()
+    original_stem_keywords = list(extractor.stemmer._keywords)
+    original_dynamic_patterns = extractor.pattern_registry.all_patterns
+    state_file = tmp_path / "invalid.json"
+    if isinstance(invalid, bytes):
+        document = invalid
+    else:
+        raw = (
+            {
+                "thread_keywords": ["replacement"],
+                "keyword_freq": {"replacement": 7},
+                "keyword_categories": {"replacement": "general"},
+                "stem_mode": "exact",
+                "similarity_threshold": 0.12,
+                "model_name": "different/model",
+                **invalid,
+            }
+            if isinstance(invalid, dict)
+            else invalid
+        )
+        document = json.dumps(raw).encode("utf-8")
+    state_file.write_bytes(document)
+
+    with pytest.raises(StateLoadError, match="Failed to load state"):
+        extractor.load_state(state_file)
+
+    assert extractor.__dict__.keys() == original_attributes.keys()
+    assert all(extractor.__dict__[key] is value for key, value in original_attributes.items())
+    assert extractor.thread_keywords == original_keywords
+    assert extractor.keyword_freq == original_frequencies
+    assert extractor.keyword_categories == original_categories
+    np.testing.assert_array_equal(extractor._keyword_embeddings, original_embeddings)
+    assert extractor._compiled_regex_patterns == original_patterns
+    assert extractor.stemmer._keywords == original_stem_keywords
+    assert extractor.pattern_registry.all_patterns == original_dynamic_patterns
+    assert extractor.extract_dynamic_entities("Ransomware exploit") == original_matches
+    assert state_file.read_bytes() == document
+
+
+def test_load_state_read_error_is_controlled(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state_file = tmp_path / "state.json"
+    state_file.write_text("{}", encoding="utf-8")
+    extractor = build_extractor(tmp_path)
+    original_attributes = extractor.__dict__.copy()
+
+    def unreadable(*_args: Any, **_kwargs: Any) -> str:
+        raise PermissionError("synthetic read failure")
+
+    monkeypatch.setattr(Path, "read_text", unreadable)
+    with pytest.raises(StateLoadError, match="synthetic read failure"):
+        extractor.load_state(state_file)
+    assert all(extractor.__dict__[key] is value for key, value in original_attributes.items())
+
+
+def test_load_state_preserves_same_model_and_empty_bank_lazily(tmp_path: Path) -> None:
+    extractor = build_extractor(tmp_path)
+    model, tokenizer = extractor._model, extractor._tokenizer
+    state_file = tmp_path / "state.json"
+    state_file.write_text(
+        json.dumps(
+            {
+                "thread_keywords": ["détection"],
+                "keyword_freq": {"détection": 2},
+                "keyword_categories": {"détection": "child_safety"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert extractor.load_state(state_file)
+    assert extractor.thread_keywords == ["détection"]
+    assert extractor.keyword_categories == {"détection": KeywordCategory.AI_SAFETY}
+    assert extractor._model is model
+    assert extractor._tokenizer is tokenizer
+    assert extractor._keyword_embeddings is None
+    assert extractor._keyword_embeddings_dirty is True
+    assert extractor.extract_dynamic_entities("détections")["DYNAMIC_KEYWORD"] == ["détections"]
+
+    state_file.write_text("{}", encoding="utf-8")
+    assert extractor.load_state(state_file)
+    assert extractor.thread_keywords == []
+    assert extractor.keyword_freq == {}
+    assert extractor.keyword_categories == {}
+    assert extractor._keyword_embeddings is None
+    assert extractor._keyword_embeddings_dirty is False
+    assert extractor._model is model
+    assert extractor._tokenizer is tokenizer
+    assert extractor.extract_dynamic_entities("détection") == {}
+
+
+def test_cli_reports_invalid_state_without_traceback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    state_file = tmp_path / "insight_extractor_state.json"
+    document = '{"thread_keywords":["replacement"],"keyword_categories":{"replacement":"invalid"}}'
+    state_file.write_text(document, encoding="utf-8")
+
+    assert cli.main([]) == 1
+    captured = capsys.readouterr()
+    assert "error: Failed to load state" in captured.err
+    assert "Traceback" not in captured.err
+    assert not captured.out
+    assert state_file.read_text(encoding="utf-8") == document
+    assert not (tmp_path / "insights_extracted.md").exists()
+
+
 def test_empty_paths_return_empty_results(tmp_path: Path) -> None:
     extractor = InsightExtractor(seed_keywords=[], enable_dynamic_regex=False, output_dir=tmp_path)
 

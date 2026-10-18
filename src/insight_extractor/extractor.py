@@ -8,6 +8,7 @@ import logging
 import re
 import warnings
 from collections import Counter
+from copy import copy
 from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
@@ -21,12 +22,18 @@ from sklearn.metrics.pairwise import cosine_similarity  # type: ignore[import-un
 
 from insight_extractor.config import KeywordCategory, StemMode
 from insight_extractor.constants import REGEX_PATTERNS, THREAD_SEEDS
-from insight_extractor.exceptions import ConfigLoadError, ModelLoadError, StateLoadError
+from insight_extractor.exceptions import (
+    ConfigLoadError,
+    ModelLoadError,
+    PatternCompileError,
+    StateLoadError,
+)
 from insight_extractor.models import (
     ExtractResult,
     KeywordStats,
     SemanticHit,
     SentenceScore,
+    _SavedState,
 )
 from insight_extractor.stemmer import DynamicKeywordStemmer, KeywordPatternRegistry
 from insight_extractor.tokenizer import SentenceTokenizer
@@ -1060,7 +1067,7 @@ class InsightExtractor:
         logger.info("State saved to %s", p)
 
     def load_state(self, path: str | Path = "insight_extractor_state.json") -> bool:
-        """Restore keyword bank, frequencies, and categories from JSON."""
+        """Restore JSON state lazily, or raise StateLoadError without changing runtime."""
         if isinstance(path, str):
             warnings.warn(
                 "Passing a string path is deprecated; use Path instead.",
@@ -1073,40 +1080,49 @@ class InsightExtractor:
             else Path(path)
         )
 
-        if not p.exists():
-            logger.debug("State file not found at %s; starting fresh.", p)
-            return False
-
         try:
+            if not p.exists():
+                logger.debug("State file not found at %s; starting fresh.", p)
+                return False
             raw = json.loads(p.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError) as exc:
+            if not isinstance(raw, dict):
+                raise ValueError("state must be a JSON object")
+            state = _SavedState.model_validate(
+                {
+                    "stem_mode": self.stem_mode,
+                    "similarity_threshold": self.similarity_threshold,
+                    "model_name": self.model_name,
+                    **raw,
+                }
+            )
+
+            # Rebuilding replaces the copy's runtime; live caches stay intact until
+            # schema validation, pattern compilation, and categorization all succeed.
+            candidate = copy(self)
+            candidate.thread_keywords = state.thread_keywords
+            candidate.keyword_freq = Counter(state.keyword_freq)
+            candidate.keyword_categories = state.keyword_categories
+            candidate.stem_mode = state.stem_mode
+            candidate.similarity_threshold = state.similarity_threshold
+            candidate.model_name = state.model_name
+            if candidate.model_name != self.model_name:
+                candidate._model = None
+                candidate._tokenizer = None
+            candidate._keyword_embeddings = None
+            candidate._keyword_embeddings_dirty = bool(candidate.thread_keywords)
+            candidate._reset_keyword_runtime()
+            candidate._auto_categorize_keywords()
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+            OverflowError,
+            RecursionError,
+            PatternCompileError,
+        ) as exc:
             raise StateLoadError(f"Failed to load state from {p}: {exc}") from exc
 
-        self.thread_keywords = list(raw.get("thread_keywords", []))
-        self.keyword_freq = Counter(raw.get("keyword_freq", {}))
-        loaded_cats = raw.get("keyword_categories", {})
-        # State files written before the child_safety -> ai_safety rename carry the
-        # old value; remap so old state loads instead of raising ValueError.
-        legacy = {"child_safety": KeywordCategory.AI_SAFETY.value}
-        self.keyword_categories = {
-            k: KeywordCategory(legacy.get(v, v)) for k, v in loaded_cats.items()
-        }
-
-        # Restore settings if present
-        if "stem_mode" in raw:
-            self.stem_mode = StemMode(raw["stem_mode"])
-        if "similarity_threshold" in raw:
-            self.similarity_threshold = float(raw["similarity_threshold"])
-        if "model_name" in raw and raw["model_name"] != self.model_name:
-            self.model_name = str(raw["model_name"])
-            self._model = None
-            self._tokenizer = None
-
-        self._keyword_embeddings = None
-        self._keyword_embeddings_dirty = bool(self.thread_keywords)
-        self._reset_keyword_runtime()
-        self._auto_categorize_keywords()
-
+        self.__dict__.update(candidate.__dict__)
         logger.info("State loaded from %s (%d keywords)", p, len(self.thread_keywords))
         return True
 
