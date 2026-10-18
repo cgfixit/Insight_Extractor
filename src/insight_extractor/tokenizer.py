@@ -6,8 +6,10 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
+from insight_extractor.exceptions import ModelLoadError
+
 if TYPE_CHECKING:
-    from transformers import AutoTokenizer
+    from transformers import PreTrainedTokenizerBase
 
 logger = logging.getLogger("insight_extractor")
 
@@ -17,27 +19,32 @@ class SentenceTokenizer:
 
     def __init__(self, model_name: str = "sentence-transformers/all-MiniLM-L6-v2") -> None:
         self.model_name = model_name
-        self._tokenizer: AutoTokenizer | None = None
+        self._tokenizer: PreTrainedTokenizerBase | None = None
 
     @property
-    def tokenizer(self) -> AutoTokenizer:
+    def tokenizer(self) -> PreTrainedTokenizerBase:
         """Lazy-load the AutoTokenizer on first access."""
         if self._tokenizer is None:
             from transformers import AutoTokenizer
 
-            self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)  # type: ignore[no-untyped-call]
+            # transformers>=5 types from_pretrained as `TokenizersBackend | None`; None means
+            # the repo ships no tokenizer files, which this pipeline cannot work without.
+            loaded = AutoTokenizer.from_pretrained(self.model_name)
+            if loaded is None:
+                raise ModelLoadError(f"No tokenizer found for model '{self.model_name}'")
+            self._tokenizer = loaded
         return self._tokenizer
 
     def count_tokens(self, text: str) -> int:
         """Return the number of tokens for text."""
-        return len(self.tokenizer.encode(text, add_special_tokens=False))  # type: ignore[attr-defined]
+        return len(self.tokenizer.encode(text, add_special_tokens=False))
 
     def chunk_text(self, text: str, max_tokens: int = 512, overlap: int = 50) -> list[str]:
         """
         Split text into chunks of max_tokens with sliding window overlap.
         Uses the model's tokenizer for accurate token counting.
         """
-        tokens = self.tokenizer.encode(text, add_special_tokens=False)  # type: ignore[attr-defined]
+        tokens = self.tokenizer.encode(text, add_special_tokens=False)
         if len(tokens) <= max_tokens:
             return [text]
 
@@ -46,8 +53,9 @@ class SentenceTokenizer:
         while start < len(tokens):
             end = min(start + max_tokens, len(tokens))
             chunk_tokens = tokens[start:end]
-            chunk_text = self.tokenizer.decode(chunk_tokens, skip_special_tokens=True)  # type: ignore[attr-defined]
-            chunks.append(chunk_text)
+            decoded = self.tokenizer.decode(chunk_tokens, skip_special_tokens=True)
+            # decode() is typed `str | list[str]`; a single id list always yields one str here.
+            chunks.append(decoded if isinstance(decoded, str) else " ".join(decoded))
             start += max_tokens - overlap
             if start >= end:
                 break
