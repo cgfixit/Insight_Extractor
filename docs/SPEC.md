@@ -20,6 +20,17 @@ CLI: `python -m insight_extractor [file.txt]` (also the `insight-extract` consol
 Writes `insights_extracted.md` and `insight_extractor_state.json` in the current working
 directory.
 
+State restoration validates a JSON object and prepares its keyword runtime before
+applying any changes. Invalid JSON/UTF-8, malformed field types, invalid enums,
+nonfinite thresholds, invalid model names, and regex-compilation failures raise
+`StateLoadError` without mutating the live extractor. Frequencies are nonnegative
+integers; keywords are strings; model names are nonempty strings. A missing state
+file returns `False`. Missing keyword collections default to empty, omitted
+settings retain current values, and unknown metadata is ignored. Legacy
+`child_safety` categories map to `ai_safety`. Successful loads invalidate embeddings
+lazily and clear model/tokenizer caches only when the model name changes. The CLI
+returns exit code 1 with a controlled error for invalid state.
+
 ## Project Structure
 ```
 Insight_Extractor/
