@@ -58,6 +58,24 @@ def test_tokenize_sentences_and_empty_text() -> None:
     ]
 
 
+def test_tokenize_sentences_splits_markdown_lines_but_joins_wrapped_prose() -> None:
+    tokenizer = SentenceTokenizer()
+    tokenizer._tokenizer = FakeTokenizer()
+    text = (
+        "## Findings\n"
+        "| 1 | Can Grok allow firewall changes? (research) |\n"
+        "The actor reused a builder\n"
+        "to target ESXi. Then it spread."
+    )
+
+    assert tokenizer.tokenize_sentences(text) == [
+        "## Findings",
+        "1 | Can Grok allow firewall changes? (research)",
+        "The actor reused a builder to target ESXi.",
+        "Then it spread.",
+    ]
+
+
 def test_tokenizer_property_raises_when_no_tokenizer_files(monkeypatch: pytest.MonkeyPatch) -> None:
     import transformers
 

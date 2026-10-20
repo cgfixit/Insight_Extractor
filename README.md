@@ -374,6 +374,19 @@ including the final partial chunk.
 splits oversized sentences with `min(50, max_tokens - 1)` overlapping tokens.
 Budgets as small as one token are supported. Tokenizer loading remains lazy.
 
+Sentence units come from `insight_extractor.utils.split_sentences`, shared with
+`extract_key_sentences()` (which keeps units longer than 30 characters). Hard-wrapped
+prose lines are joined and split on `.`, `!`, or `?`; blank lines end a paragraph;
+list items and `>` quotes start one; headings and table rows (a leading `|` or
+box-drawing bar, or two or more `|`) are single units with their outer frame removed;
+lines with no word characters, such as `|---|` rules and box borders, are dropped.
+Whitespace inside each unit is collapsed to single spaces.
+
+`extract_semantic_keywords(text, chunk_size=512)` caps `chunk_size` at the loaded
+model's `max_seq_length` minus its two special tokens (254 for all-MiniLM-L6-v2), so
+oversized units are split into windows the model actually embeds instead of being
+silently truncated.
+
 All of the above, plus `SentenceTokenizer`, the Pydantic models, the exceptions
 (`InsightExtractorError` → `ConfigLoadError`, `ModelLoadError`, `StateLoadError`,
 `PatternCompileError`), `THREAD_SEEDS`, and `REGEX_PATTERNS`, import from the top-level

@@ -124,6 +124,52 @@ def test_markdown_report_preserves_and_escapes_result_text(tmp_path: Path) -> No
     assert "\\| injected \\| table \\| row \\|" in report
 
 
+def test_key_sentences_keep_markdown_table_rows_separate(tmp_path: Path) -> None:
+    extractor = build_extractor(tmp_path)
+    rows = [
+        f"{i} | Ransomware exploit review thread number {i} | 2026-07-0{i} 18:02 | "
+        f"https://example.com/tasks/{i}"
+        for i in range(1, 6)
+    ]
+    text = "# | Title | Created | Link\n--|---|---|---\n" + "\n".join(rows)
+    extractor._recompute_keyword_embeddings()
+
+    sentences = [s.sentence for s in extractor.extract_key_sentences(text, top_n=10)]
+
+    assert sorted(sentences) == sorted(rows)
+
+
+class WindowedModel(FakeModel):
+    max_seq_length = 8
+
+
+class BudgetRecordingTokenizer:
+    def __init__(self) -> None:
+        self.budgets: list[int] = []
+
+    def tokenize_sentences(self, text: str, *, max_tokens: int = 512) -> list[str]:
+        self.budgets.append(max_tokens)
+        return [text]
+
+
+@pytest.mark.parametrize(
+    ("model", "chunk_size", "expected"),
+    [(WindowedModel(), 512, 6), (WindowedModel(), 4, 4), (FakeModel(), 512, 512)],
+)
+def test_semantic_chunks_fit_the_model_window(
+    tmp_path: Path, model: FakeModel, chunk_size: int, expected: int
+) -> None:
+    extractor = build_extractor(tmp_path)
+    extractor._model = model
+    tokenizer = BudgetRecordingTokenizer()
+    extractor._tokenizer = tokenizer
+    extractor._recompute_keyword_embeddings()
+
+    extractor.extract_semantic_keywords("Ransomware exploited a CVE.", chunk_size=chunk_size)
+
+    assert tokenizer.budgets == [expected]
+
+
 def test_regex_and_dynamic_can_run_without_model(tmp_path: Path) -> None:
     extractor = InsightExtractor(
         seed_keywords=["ransomware"],
