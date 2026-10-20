@@ -24,7 +24,8 @@ wheels/
 *.whl
 *.tar.gz
 *.zip
-!constraints.txt         # keep pinned constraints in repo
+# Keep pinned constraints in repo (gitignore has no trailing comments; keep this alone)
+!constraints.txt
 
 # ---------------------------------------------------------------------------
 # Virtual environments
