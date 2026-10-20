@@ -133,6 +133,57 @@ class TestCompileKeywords:
         matches = {match.match for match in stemmer.find_matches(text)}
         assert matches == set(long_kws)
 
+    @pytest.mark.parametrize(
+        "mode",
+        [StemMode.EXACT, StemMode.STEM, StemMode.PREFIX, StemMode.SUFFIX, StemMode.FUZZY],
+    )
+    @pytest.mark.parametrize("case_sensitive", [False, True])
+    def test_non_capturing_alternation_keeps_per_keyword_spans(
+        self, mode: StemMode, case_sensitive: bool
+    ) -> None:
+        """Dropping the per-keyword capture groups keeps every match span."""
+        stemmer = DynamicKeywordStemmer(stem_mode=mode, case_sensitive=case_sensitive)
+        kws = ["ransom", "ransomware", "C++", ".NET", "pass-the-hash", "ESXi", "CVE", "ware"]
+        text = (
+            "Ransomware ransomwares RANSOMED unransomware C++ .NET pass-the-hash "
+            "esxi ESXi CVE-2026-1 hardware software ware wares"
+        )
+        flags = 0 if case_sensitive else re.IGNORECASE
+        reference = re.compile("|".join(f"({stemmer.generate_pattern(kw)})" for kw in kws), flags)
+
+        compiled = stemmer.compile_keywords(kws)
+
+        assert isinstance(compiled, re.Pattern)
+        # Capture groups made matching quadratic in the keyword count.
+        assert compiled.groups == 0
+        assert [m.span() for m in compiled.finditer(text)] == [
+            m.span() for m in reference.finditer(text)
+        ]
+
+    def test_chunked_patterns_have_no_capture_groups(self) -> None:
+        stemmer = DynamicKeywordStemmer(stem_mode=StemMode.EXACT, max_pattern_length=50)
+        kws = [f"kw_{i:05d}" for i in range(20)]
+
+        compiled = stemmer.compile_keywords(kws)
+
+        assert isinstance(compiled, ChunkedKeywordPattern)
+        assert all(len(chunk.pattern) <= 50 for chunk in compiled.patterns)
+        assert all(chunk.groups == 0 for chunk in compiled.patterns)
+        assert {m.group(0) for m in compiled.finditer(" ".join(kws))} == set(kws)
+
+    def test_regex_mode_keeps_raw_alternatives_and_backreferences(self) -> None:
+        stemmer = DynamicKeywordStemmer(stem_mode=StemMode.REGEX)
+
+        compiled = stemmer.compile_keywords([r"foo|bar", r"CVE-\d{4}"])
+        first_backref = stemmer.compile_keywords([r"(\w)\1"])
+        later_backref = stemmer.compile_keywords([r"ransom\w*", r"(\w)\1"])
+
+        assert compiled.pattern == r"(?:foo|bar)|(?:CVE-\d{4})"
+        assert compiled.search("xbar") is not None
+        # A wrapping capture group used to shift \1 onto the wrapper itself.
+        assert [m.group(0) for m in first_backref.finditer("book jazz")] == ["oo", "zz"]
+        assert [m.group(0) for m in later_backref.finditer("book ransomx")] == ["oo", "ransomx"]
+
 
 class TestCompileTypedPatterns:
     """Category-scoped pattern compilation."""
