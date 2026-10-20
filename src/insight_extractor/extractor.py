@@ -5,7 +5,9 @@ from __future__ import annotations
 import html
 import json
 import logging
+import os
 import re
+import tempfile
 import warnings
 from collections import Counter
 from copy import copy
@@ -41,7 +43,7 @@ from insight_extractor.utils import compute_text_hash, format_timestamp
 
 logger = logging.getLogger("insight_extractor")
 
-_MARKDOWN_SPECIAL = re.compile(r"[\\`*_{}\[\]()#+\-.!|>]")
+_MARKDOWN_SPECIAL = re.compile(r"[\\`*_{}\[\]()#+\-.!|>~]")
 
 
 def _markdown_text(value: str) -> str:
@@ -1092,7 +1094,19 @@ class InsightExtractor:
             "model_name": self.model_name,
             "version": 1,
         }
-        p.write_text(json.dumps(state, indent=2, ensure_ascii=False), encoding="utf-8")
+        # Write a sibling temp file and swap it in: an interrupted or failed write must not
+        # truncate the previous state, or every later load_state() fails.
+        payload = json.dumps(state, indent=2, ensure_ascii=False)
+        fd, tmp = tempfile.mkstemp(dir=p.parent or ".", prefix=f".{p.name}.", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(payload)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tmp, p)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
         logger.info("State saved to %s", p)
 
     def load_state(self, path: str | Path = "insight_extractor_state.json") -> bool:
