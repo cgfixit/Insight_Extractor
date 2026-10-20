@@ -772,6 +772,9 @@ class InsightExtractor:
         if isinstance(window, int) and window > 2:
             chunk_size = min(chunk_size, window - 2)
         chunks = self.tokenizer.tokenize_sentences(text, max_tokens=chunk_size)
+        # Label lines such as "- Score: `1`" are units of their own and match the keyword
+        # they name almost verbatim; use the key-sentence floor unless nothing is longer.
+        chunks = [chunk for chunk in chunks if len(chunk) > 30] or chunks
         if not chunks:
             return []
 

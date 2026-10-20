@@ -378,7 +378,8 @@ Sentence units come from `insight_extractor.utils.split_sentences`, shared with
 `extract_key_sentences()` (which keeps units longer than 30 characters). Hard-wrapped
 prose lines are joined and split on `.`, `!`, or `?`; blank lines end a paragraph;
 list items and `>` quotes start one; headings and table rows (a leading `|` or
-box-drawing bar, or two or more `|`) are single units with their outer frame removed;
+box-drawing bar, or rows attached to a `|---|` delimiter row) are single units with
+their outer frame removed;
 lines with no word characters, such as `|---|` rules and box borders, are dropped.
 Whitespace inside each unit is collapsed to single spaces.
 
