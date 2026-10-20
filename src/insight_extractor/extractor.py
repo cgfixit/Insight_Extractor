@@ -658,16 +658,17 @@ class InsightExtractor:
 
         # There is one document, so avoid an extra sparse-row slice and copy.
         scores = tfidf_matrix.toarray().ravel()
+        top_indices = np.argsort(scores)[::-1][: self.dynamic_expansion_top_n]
         # n-grams are built after stop words and punctuation are removed, so phrases such
         # as "threat actor leveraged" may never occur; the keyword regex could not match them.
+        # Dropped phrases are not backfilled from lower ranks, which would add more terms.
         haystack = cleaned.lower()
-        candidates: list[str] = []
-        for i in np.argsort(scores)[::-1]:
-            if scores[i] <= 0 or len(candidates) >= self.dynamic_expansion_top_n:
-                break
-            feature = feature_names[i]
-            if " " not in feature or _phrase_occurs(feature, haystack):
-                candidates.append(feature)
+        candidates = [
+            feature_names[i]
+            for i in top_indices
+            if scores[i] > 0
+            and (" " not in feature_names[i] or _phrase_occurs(feature_names[i], haystack))
+        ]
 
         if not candidates:
             return []

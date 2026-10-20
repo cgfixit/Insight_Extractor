@@ -567,6 +567,22 @@ def test_keyword_expansion_skips_case_insensitive_duplicates(tmp_path: Path) -> 
     assert [kw for kw in extractor.thread_keywords if kw.lower() == "esxi"] == ["ESXi"]
 
 
+def test_keyword_expansion_does_not_backfill_dropped_phrases(tmp_path: Path) -> None:
+    extractor = InsightExtractor(
+        seed_keywords=["anchor"],
+        similarity_threshold=0.0,
+        dynamic_expansion_top_n=3,
+        output_dir=tmp_path,
+    )
+    extractor._model = FakeModel()
+    # Top three by count: "alpha", "beta", and the phantom "alpha beta" ("of" is a stop word).
+    text = "alpha of beta alpha of beta alpha of beta delta"
+
+    added = extractor.update_thread_keywords(text)
+
+    assert sorted(added) == ["alpha", "beta"]
+
+
 def test_semantic_methods_encode_keywords_lazily_on_a_fresh_extractor(tmp_path: Path) -> None:
     extractor = build_extractor(tmp_path)
     text = "Ransomware operators exploited a CVE. The exploit chain reached the domain controller."
