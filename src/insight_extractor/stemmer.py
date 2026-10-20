@@ -16,6 +16,15 @@ if TYPE_CHECKING:
 
 logger: logging.Logger = logging.getLogger(__name__)
 
+# re.escape renders each whitespace char as a backslash plus that char; a run of them
+# becomes one \s+ so "data breach" also matches hard-wrapped "data\nbreach".
+_ESCAPED_WHITESPACE_RUN: re.Pattern[str] = re.compile(r"(?:\\\s)+")
+
+
+def _normalize_whitespace(text: str) -> str:
+    """Collapse every whitespace run in *text* to a single space."""
+    return " ".join(text.split())
+
 
 # Type aliases
 class ChunkedKeywordPattern:
@@ -142,7 +151,7 @@ class DynamicKeywordStemmer:
             Regex pattern string (not yet compiled).
         """
         effective_mode = mode or self.stem_mode
-        escaped = re.escape(keyword)
+        escaped = _ESCAPED_WHITESPACE_RUN.sub(r"\\s+", re.escape(keyword))
 
         match effective_mode:
             case StemMode.EXACT:
@@ -445,7 +454,9 @@ class DynamicKeywordStemmer:
             matched_text = match.group(0)
             source_keyword = self._resolve_source_keyword(matched_text)
             is_stemmed = (
-                source_keyword is not None and matched_text.lower() != source_keyword.lower()
+                source_keyword is not None
+                and _normalize_whitespace(matched_text).lower()
+                != _normalize_whitespace(source_keyword).lower()
             )
 
             results.append(
@@ -469,7 +480,7 @@ class DynamicKeywordStemmer:
         if self._keyword_lookup is None:
             lookup: dict[str, str] = {}
             for kw in self._keywords:
-                lookup.setdefault(kw.lower(), kw)
+                lookup.setdefault(_normalize_whitespace(kw).lower(), kw)
             self._keyword_lookup = lookup
         return self._keyword_lookup
 
@@ -477,7 +488,9 @@ class DynamicKeywordStemmer:
         """Map matched text back to its originating keyword.
 
         First tries exact case-insensitive match, then falls back to
-        substring containment in either direction.
+        substring containment in either direction. Whitespace runs in
+        *matched_text* are collapsed to one space first, since multi-word
+        keywords match across newlines, tabs and repeated spaces.
 
         Parameters
         ----------
@@ -489,7 +502,7 @@ class DynamicKeywordStemmer:
         str | None
             The originating keyword, or *None* if no mapping found.
         """
-        matched_lower = matched_text.lower()
+        matched_lower = _normalize_whitespace(matched_text).lower()
 
         # Exact match -- O(1) via lazily-built lookup instead of a linear scan
         exact = self._get_keyword_lookup().get(matched_lower)
@@ -591,7 +604,9 @@ class KeywordPatternRegistry:
         """Run all patterns (static + dynamic) and return merged results.
 
         Static patterns are run individually per label.
-        Dynamic matches are grouped under *DYNAMIC_KEYWORD*.
+        Dynamic matches are grouped under *DYNAMIC_KEYWORD*, with whitespace
+        runs collapsed to one space before deduplication so a keyword wrapped
+        across lines is reported once, as it would read in prose.
 
         Parameters
         ----------
@@ -629,7 +644,7 @@ class KeywordPatternRegistry:
         if self._compiled_dynamic is not None:
             seen_dynamic: set[str] = set()
             for match in self._compiled_dynamic.finditer(text):
-                m_str = match.group(0)
+                m_str = _normalize_whitespace(match.group(0))
                 if m_str not in seen_dynamic:
                     results[PatternLabel.DYNAMIC_KEYWORD].append(m_str)
                     seen_dynamic.add(m_str)
