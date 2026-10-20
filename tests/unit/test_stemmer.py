@@ -282,6 +282,80 @@ class TestSpecialCharacters:
         _ = stemmer.compiled_pattern.search("using C++ and [test] cases")
 
 
+class TestMultiWordWhitespace:
+    """Multi-word keywords match across any whitespace run, not just one space."""
+
+    SEPARATED = ["data\nbreach", "data  breach", "data\tbreach", "data \r\n breach"]
+
+    @pytest.mark.parametrize("mode", [StemMode.EXACT, StemMode.STEM, StemMode.PREFIX])
+    @pytest.mark.parametrize("text", SEPARATED)
+    def test_matches_whitespace_runs(self, mode: StemMode, text: str) -> None:
+        stemmer = DynamicKeywordStemmer(stem_mode=mode)
+        stemmer.set_keywords(["data breach"])
+        matches = stemmer.find_matches(f"A {text} occurred.")
+        assert len(matches) == 1
+        assert matches[0].match == text
+        assert matches[0].keyword == "data breach"
+        assert matches[0].stemmed is False
+
+    @pytest.mark.parametrize("mode", [StemMode.EXACT, StemMode.STEM, StemMode.PREFIX])
+    def test_still_requires_a_separator(self, mode: StemMode) -> None:
+        stemmer = DynamicKeywordStemmer(stem_mode=mode)
+        stemmer.set_keywords(["data breach"])
+        assert stemmer.find_matches("a databreach occurred") == []
+
+    def test_whitespace_run_in_keyword_becomes_one_class(
+        self, stemmer_exact: DynamicKeywordStemmer
+    ) -> None:
+        pat = stemmer_exact.generate_pattern("data \t breach", StemMode.EXACT)
+        assert pat == r"\bdata\s+breach\b"
+
+    def test_escaped_backslash_before_space_stays_literal(
+        self, stemmer_exact: DynamicKeywordStemmer
+    ) -> None:
+        pat = stemmer_exact.generate_pattern("a\\ b", StemMode.EXACT)
+        assert re.search(pat, "x a\\\nb y")
+        assert not re.search(pat, "x a\nb y")
+
+    def test_regex_mode_passes_spaces_through(self, stemmer: DynamicKeywordStemmer) -> None:
+        assert stemmer.generate_pattern("data breach", StemMode.REGEX) == "data breach"
+
+    def test_stem_suffix_after_wrapped_phrase(self, stemmer: DynamicKeywordStemmer) -> None:
+        stemmer.set_keywords(["data breach"])
+        matches = stemmer.find_matches("two data\nbreaches")
+        assert [(m.match, m.keyword, m.stemmed) for m in matches] == [
+            ("data\nbreaches", "data breach", True)
+        ]
+
+    @pytest.mark.parametrize("text", SEPARATED)
+    def test_resolve_source_keyword_normalizes_whitespace(
+        self, stemmer: DynamicKeywordStemmer, text: str
+    ) -> None:
+        stemmer.set_keywords(["Data Breach"])
+        assert stemmer._resolve_source_keyword(text) == "Data Breach"
+
+    def test_resolve_source_keyword_with_spaced_keyword(
+        self, stemmer: DynamicKeywordStemmer
+    ) -> None:
+        stemmer.set_keywords(["data  breach"])
+        assert stemmer._resolve_source_keyword("data\nbreach") == "data  breach"
+
+    def test_chunking_keeps_every_multi_word_keyword(self) -> None:
+        stemmer = DynamicKeywordStemmer(stem_mode=StemMode.EXACT, max_pattern_length=50)
+        kws = [f"kw {i:05d} term" for i in range(100)]
+        stemmer.set_keywords(kws)
+        assert isinstance(stemmer.compiled_pattern, ChunkedKeywordPattern)
+        text = "\n".join(kw.replace(" ", "\t", 1) for kw in kws)
+        assert {m.keyword for m in stemmer.find_matches(text)} == set(kws)
+
+    def test_extract_all_reports_wrapped_match_once_with_single_spaces(
+        self, registry_with_stemmer: KeywordPatternRegistry
+    ) -> None:
+        registry_with_stemmer.regenerate_dynamic_patterns(["data breach"])
+        results = registry_with_stemmer.extract_all("data\nbreach, data  breach, data breach")
+        assert results == {"DYNAMIC_KEYWORD": ["data breach"]}
+
+
 class TestCompileKeywordsIncremental:
     """Incremental (append-only) compilation matches full-rebuild behavior."""
 
