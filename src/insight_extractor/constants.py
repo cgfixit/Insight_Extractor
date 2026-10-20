@@ -400,16 +400,17 @@ REGEX_PATTERNS: RegexPatternDict = {
     PatternLabel.URL: (
         r"\b(?:https?|hxxps?|ftp)(?::|\[:\])//(?:[^\s<>\"'`|\[\]]|\[\.\])+(?<![.,;:!?)])"
     ),
-    # Run-start lookbehinds keep matching linear on long dotted/hyphenated runs (a leading
-    # \b let every label restart the scan: O(n^2)). The tail guard stops a listed TLD
-    # inside a longer host from yielding a prefix: paypal.com.secure-login.ru was
-    # reported as "paypal.com".
+    # Unbounded label/local-part repeats let every \b inside a long dotted or hyphenated
+    # run rescan to its end: O(n^2). RFC length limits (63-char labels, 126 labels,
+    # 64-char local parts) bound each attempt while keeping the Unicode-aware \b, so
+    # homoglyph hosts like "micr\u043esoft.com" still yield nothing rather than "soft.com".
+    # The tail guard stops a listed TLD inside a longer host from yielding a prefix:
+    # paypal.com.secure-login.ru was reported as "paypal.com".
     PatternLabel.DOMAIN: (
-        r"(?<![a-zA-Z0-9-])(?<![a-zA-Z0-9-]\.)(?:[a-zA-Z0-9-]+\.)+"
+        r"\b(?:[a-zA-Z0-9-]{1,63}\.){1,126}"
         r"(?:com|net|org|io|ai|gov|edu|onion|xyz|co)\b(?![.-]?[a-zA-Z0-9])"
     ),
-    # Same run-start guard as DOMAIN.
-    PatternLabel.EMAIL: r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
+    PatternLabel.EMAIL: r"\b[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
     # Static patterns compile with re.IGNORECASE; (?-i:...) keeps base58's 0/O/I/l
     # exclusions, and pure-hex tokens (MD5s starting with 1 or 3) are not wallets.
     PatternLabel.BTC_WALLET: r"(?-i:\b(?![0-9a-fA-F]+\b)[13][a-km-zA-HJ-NP-Z1-9]{25,34}\b)",

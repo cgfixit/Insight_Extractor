@@ -185,14 +185,28 @@ def test_domain_never_reports_a_prefix_of_a_longer_host(tmp_path: Path) -> None:
 
 def test_domain_and_email_scale_linearly_on_dotted_runs(tmp_path: Path) -> None:
     extractor = InsightExtractor(seed_keywords=["ransomware"], output_dir=tmp_path)
-    dotted = "a." * 10000 + " " + "-".join(f"{i % 256:02X}" for i in range(10000))
+    dotted = "a." * 20000 + " " + "-".join(f"{i % 256:02X}" for i in range(10000))
 
     started = time.perf_counter()
     result = extractor.extract_regex_entities(dotted)
 
-    # The quadratic patterns took ~7.7 s on the dotted run alone.
-    assert time.perf_counter() - started < 1.0
+    # Generous budget: the bounded patterns take ~0.6 s here, the quadratic ones ~30 s.
+    assert time.perf_counter() - started < 3.0
     assert "DOMAIN" not in result and "EMAIL" not in result
+
+
+def test_domain_and_email_keep_unicode_word_boundaries(tmp_path: Path) -> None:
+    extractor = InsightExtractor(seed_keywords=["ransomware"], output_dir=tmp_path)
+    # Cyrillic homoglyphs, an IDN label, an SRV name, and non-ASCII before an email.
+    text = (
+        "micr\u043esoft.com p\u0430ypal.com b\u00fccher.example.com "
+        "_ldap._tcp.dc.corp.net foo_bar.com -evil.com \u00e9user@corp.com .admin@corp.com"
+    )
+
+    result = extractor.extract_regex_entities(text)
+
+    assert result["DOMAIN"] == ["example.com", "dc.corp.net", "evil.com", "corp.com"]
+    assert result["EMAIL"] == ["admin@corp.com"]
 
 
 def test_static_pattern_regressions_under_ignorecase(tmp_path: Path) -> None:
