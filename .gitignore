@@ -58,8 +58,22 @@ secrets.yml
 secrets.json
 credentials.json
 token.json
-*_secret*
-*_token*
+# Scoped to data/credential extensions: bare *_secret* / *_token* also matched source
+# such as tests/unit/test_tokenizer.py and refused `git add` on new modules.
+*_secret*.json
+*_secret*.yaml
+*_secret*.yml
+*_secret*.toml
+*_secret*.txt
+*_secret*.env
+*_token*.json
+*_token*.yaml
+*_token*.yml
+*_token*.toml
+*_token*.txt
+*_token*.env
+*.secret
+*.token
 api_keys.py
 config.local.*
 
@@ -76,7 +90,8 @@ config.local.*
 *.hdf5
 # HuggingFace/transformers local cache (often ~GB)
 .cache/
-models/
+# Anchored: unanchored models/ also ignored src/insight_extractor/models/
+/models/
 model_cache/
 huggingface/
 sentence_transformers/
@@ -102,7 +117,9 @@ coverage/
 htmlcov/
 *.cover
 *.lcov
-junit.xml
+# CI writes junit-unit-<python>.xml / junit-integration.xml at the repo root
+junit*.xml
+smoke_results.json
 test-results/
 test_output/
 
