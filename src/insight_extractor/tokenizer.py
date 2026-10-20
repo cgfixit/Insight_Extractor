@@ -9,6 +9,8 @@ from insight_extractor.exceptions import ModelLoadError
 from insight_extractor.utils import split_sentences
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from transformers import PreTrainedTokenizerBase
 
 logger = logging.getLogger("insight_extractor")
@@ -44,6 +46,9 @@ class SentenceTokenizer:
         Split text into chunks of max_tokens with sliding window overlap.
         Uses the model's tokenizer for accurate token counting.
 
+        With a fast tokenizer each chunk is the verbatim source span its token
+        window covers; a slow tokenizer falls back to decoding the window.
+
         Raises ValueError unless max_tokens is a positive integer and overlap
         is an integer in [0, max_tokens). Validation never loads the tokenizer.
         """
@@ -55,19 +60,32 @@ class SentenceTokenizer:
             or not 0 <= overlap < max_tokens
         ):
             raise ValueError("overlap must be an integer in [0, max_tokens)")
-        tokens = self.tokenizer.encode(text, add_special_tokens=False)
-        if len(tokens) <= max_tokens:
+        # decode() of an uncased WordPiece window is not the source text: it lowercases,
+        # re-spaces punctuation ("https : / / www"), drops [UNK] glyphs, and can start
+        # with "##" pieces. Offsets let fast tokenizers emit the original span instead.
+        offsets: Sequence[tuple[int, int]] | None = None
+        tokens: list[int] = []
+        if getattr(self.tokenizer, "is_fast", False):
+            encoding = self.tokenizer(text, add_special_tokens=False, return_offsets_mapping=True)
+            offsets = encoding["offset_mapping"]
+            token_count = len(offsets)
+        else:
+            tokens = self.tokenizer.encode(text, add_special_tokens=False)
+            token_count = len(tokens)
+        if token_count <= max_tokens:
             return [text]
 
         chunks: list[str] = []
         start = 0
-        while start < len(tokens):
-            end = min(start + max_tokens, len(tokens))
-            chunk_tokens = tokens[start:end]
-            decoded = self.tokenizer.decode(chunk_tokens, skip_special_tokens=True)
-            # decode() is typed `str | list[str]`; a single id list always yields one str here.
-            chunks.append(decoded if isinstance(decoded, str) else " ".join(decoded))
-            if end == len(tokens):
+        while start < token_count:
+            end = min(start + max_tokens, token_count)
+            if offsets is not None:
+                chunks.append(text[offsets[start][0] : offsets[end - 1][1]])
+            else:
+                decoded = self.tokenizer.decode(tokens[start:end], skip_special_tokens=True)
+                # decode() is typed `str | list[str]`; a single id list always yields one str.
+                chunks.append(decoded if isinstance(decoded, str) else " ".join(decoded))
+            if end == token_count:
                 break
             start = end - overlap
         return chunks
