@@ -372,6 +372,17 @@ including for empty or short text. When using a budget of 50 or less, pass an
 explicit overlap below that budget. Zero overlap covers every token exactly once,
 including the final partial chunk.
 
+Each chunk is the verbatim slice of the input that its token window covers
+(`text[start_char:end_char]` from the fast tokenizer's `offset_mapping`), so case,
+punctuation spacing, URLs, and characters the tokenizer maps to `[UNK]` (emoji,
+box-drawing glyphs) are preserved inside the span, and no `##` continuation markers
+are introduced. Windows are not snapped to word boundaries, so a chunk can still begin
+or end inside a word. Whitespace between two windows is not part of either chunk.
+Because WordPiece re-tokenizes a cut word differently, re-encoding a chunk can
+occasionally yield one or two tokens more than `max_tokens`. Slow (non-fast)
+tokenizers, which have no offsets, fall back to `tokenizer.decode(window)`, which for
+uncased models lowercases and re-spaces the text.
+
 `tokenize_sentences(text, max_tokens=512)` uses the same budget validation and
 splits oversized sentences with `min(50, max_tokens - 1)` overlapping tokens.
 Budgets as small as one token are supported. Tokenizer loading remains lazy.
