@@ -46,9 +46,10 @@ _MARKDOWN_SPECIAL = re.compile(r"[\\`*_{}\[\]()#+\-.!|>]")
 # Single-document TF-IDF ranks repeated boilerplate highest, so URL pieces, dates, counts,
 # and hash/UUID fragments outranked real terms and were persisted as keywords. Regex
 # extraction already reports those, so they are stripped and candidates need a letter.
+# The email branch starts with a lookbehind, not \b, so long "a.a.a" runs stay linear.
 _TFIDF_NOISE = re.compile(
     r"\b(?:(?:https?|hxxps?|ftp)://|www\.)\S+"
-    r"|\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b"
+    r"|(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b"
     r"|\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b"
     r"|\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{8,}\b",
     re.IGNORECASE,
@@ -691,6 +692,7 @@ class InsightExtractor:
             if newly_added:
                 self.stemmer.set_keywords(self.thread_keywords)
                 self.pattern_registry.regenerate_dynamic_patterns(self.thread_keywords)
+                self._keyword_embeddings = None
                 self._keyword_embeddings_dirty = True
                 self._auto_categorize_keywords()
             return newly_added

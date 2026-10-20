@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 import warnings
 from pathlib import Path
 from typing import Any
@@ -13,7 +14,7 @@ import pytest
 import insight_extractor.__main__ as cli
 from insight_extractor.config import KeywordCategory, StemMode
 from insight_extractor.exceptions import ConfigLoadError, ModelLoadError, StateLoadError
-from insight_extractor.extractor import InsightExtractor, _compile_word_pattern
+from insight_extractor.extractor import _TFIDF_NOISE, InsightExtractor, _compile_word_pattern
 from insight_extractor.models import ExtractResult, KeywordStats, SemanticHit, SentenceScore
 
 
@@ -532,6 +533,14 @@ def test_keyword_expansion_ignores_urls_numbers_and_hashes(tmp_path: Path) -> No
     assert not tokens & {"https", "hxxp", "www", "example", "computer", "tasks", "drop", "bin"}
     assert not any(token.isdigit() for token in tokens)
     assert "9a2f15b7" not in tokens and "3b4c5d6e7f8a9b0c1d2e3f4a" not in tokens
+
+
+def test_keyword_noise_stripping_is_linear_on_dotted_runs() -> None:
+    started = time.perf_counter()
+    _TFIDF_NOISE.sub(" ", "a1-" * 20000 + "a." * 20000)
+
+    # Generous budget: the linear pattern takes ~0.03 s here, a \b-led email branch ~19 s.
+    assert time.perf_counter() - started < 3.0
 
 
 def test_keyword_expansion_without_seeds_ignores_urls_and_numbers(
