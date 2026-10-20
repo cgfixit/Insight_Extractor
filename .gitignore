@@ -66,12 +66,16 @@ token.json
 *_secret*.toml
 *_secret*.txt
 *_secret*.env
+*_secret*.ini
+*_secret*.cfg
 *_token*.json
 *_token*.yaml
 *_token*.yml
 *_token*.toml
 *_token*.txt
 *_token*.env
+*_token*.ini
+*_token*.cfg
 *.secret
 *.token
 api_keys.py
