@@ -412,6 +412,8 @@ class InsightExtractor:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self._compiled_regex_patterns: dict[str, re.Pattern[str]] = {}
+        # Set only during extract(), whose semantic and key-sentence passes share most units.
+        self._unit_embeddings: dict[str, npt.NDArray[np.float64]] | None = None
 
         # ---- keyword bank --------------------------------------------------
         self.thread_keywords: list[str] = list(seed_keywords) if seed_keywords else []
@@ -563,6 +565,41 @@ class InsightExtractor:
         self._keyword_embeddings = embeddings / norms
         self._keyword_embeddings_dirty = False
 
+    def _append_keyword_embeddings(self, new_keywords: list[str]) -> None:
+        """Encode only keywords appended to the bank instead of re-encoding all of it."""
+        current = self._keyword_embeddings
+        if current is None or len(current) + len(new_keywords) != len(self.thread_keywords):
+            self._recompute_keyword_embeddings()
+            return
+        embeddings = self.model.encode(
+            new_keywords,
+            show_progress_bar=False,
+            convert_to_numpy=True,
+        )
+        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+        norms[norms == 0] = 1.0
+        self._keyword_embeddings = np.vstack([current, embeddings / norms])
+        self._keyword_embeddings_dirty = False
+
+    def _encode_units(self, units: list[str]) -> npt.NDArray[np.float64]:
+        """Encode and L2-normalise *units*, reusing vectors cached by extract()."""
+        cache = self._unit_embeddings
+        pending = units if cache is None else [u for u in dict.fromkeys(units) if u not in cache]
+        embeddings = np.empty((0, 0), dtype=np.float64)
+        if pending:
+            embeddings = self.model.encode(
+                pending,
+                show_progress_bar=False,
+                convert_to_numpy=True,
+            )
+            norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+            norms[norms == 0] = 1.0
+            embeddings = embeddings / norms
+        if cache is None:
+            return embeddings
+        cache.update(zip(pending, embeddings, strict=True))
+        return np.array([cache[unit] for unit in units])
+
     # ------------------------------------------------------------------
     # Auto-categorisation
     # ------------------------------------------------------------------
@@ -696,7 +733,7 @@ class InsightExtractor:
         if newly_added:
             self.stemmer.set_keywords(self.thread_keywords)
             self.pattern_registry.regenerate_dynamic_patterns(self.thread_keywords)
-            self._recompute_keyword_embeddings()
+            self._append_keyword_embeddings(newly_added)
             self._auto_categorize_keywords()
 
         return newly_added
@@ -770,15 +807,7 @@ class InsightExtractor:
         if not chunks:
             return []
 
-        chunk_embeddings = self.model.encode(
-            chunks,
-            show_progress_bar=False,
-            convert_to_numpy=True,
-        )
-        chunk_norms = np.linalg.norm(chunk_embeddings, axis=1, keepdims=True)
-        chunk_norms[chunk_norms == 0] = 1.0
-        chunk_embeddings = chunk_embeddings / chunk_norms
-
+        chunk_embeddings = self._encode_units(chunks)
         similarities = cosine_similarity(chunk_embeddings, self._keyword_embeddings)
         # similarities shape: (n_chunks, n_keywords)
 
@@ -830,15 +859,7 @@ class InsightExtractor:
         if not raw_sentences:
             return []
 
-        sent_embeddings = self.model.encode(
-            raw_sentences,
-            show_progress_bar=False,
-            convert_to_numpy=True,
-        )
-        sent_norms = np.linalg.norm(sent_embeddings, axis=1, keepdims=True)
-        sent_norms[sent_norms == 0] = 1.0
-        sent_embeddings = sent_embeddings / sent_norms
-
+        sent_embeddings = self._encode_units(raw_sentences)
         similarities = cosine_similarity(sent_embeddings, self._keyword_embeddings)
         max_scores = similarities.max(axis=1)
 
@@ -934,8 +955,12 @@ class InsightExtractor:
         # Run all extractors
         regex_entities = self.extract_regex_entities(text)
         dynamic_keyword_matches = self.extract_dynamic_entities(text)
-        semantic_keywords = self.extract_semantic_keywords(text)
-        key_sentences = self.extract_key_sentences(text, top_n=self.top_k)
+        self._unit_embeddings = {}
+        try:
+            semantic_keywords = self.extract_semantic_keywords(text)
+            key_sentences = self.extract_key_sentences(text, top_n=self.top_k)
+        finally:
+            self._unit_embeddings = None
         keyword_stats = self.get_keyword_stats()
 
         return ExtractResult(
