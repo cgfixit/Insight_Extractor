@@ -18,10 +18,15 @@ _TABLE_RULE = re.compile(r"\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)+\|?")
 _BLOCK_START = re.compile(r"[-*+]\s|\d{1,3}[.)]\s|>")
 # A punctuation split must not end on a list ordinal ("> 4.") or a common abbreviation;
 # "U.S. government" otherwise became the top-ranked fragment "government and ...".
+# Titles are case-sensitive so "every 500 ms. The operator ..." still splits.
 _NO_BREAK_AFTER = re.compile(
-    r"^(?:[>#*+-]\s*)*\d{1,3}\.$|(?<![\w.])(?:vs|e\.g|i\.e|cf|u\.s|u\.k|mrs?|ms|dr|st|fig|approx)\.$",
+    r"^(?:[>#*+-]\s*)*\d{1,3}\.$"
+    r"|(?<![\w.])(?:vs|e\.g|i\.e|cf|approx)\.$"
+    r"|(?<![\w.])(?-i:Mrs?|Ms|Dr|St|Fig)\.$",
     re.IGNORECASE,
 )
+# "U.S."/"U.K." often end a sentence, so they join only a lowercase continuation.
+_COUNTRY_ABBREVIATION = re.compile(r"(?<![\w.])U\.[SK]\.$")
 _FRAME_CHARS = " \t|│┃║"
 
 
@@ -77,7 +82,10 @@ def split_sentences(text: str) -> list[str]:
         if paragraph:
             pieces: list[str] = []
             for piece in _SENTENCE_END.split(" ".join(paragraph)):
-                if pieces and _NO_BREAK_AFTER.search(pieces[-1]):
+                if pieces and (
+                    _NO_BREAK_AFTER.search(pieces[-1])
+                    or (_COUNTRY_ABBREVIATION.search(pieces[-1]) and piece[:1].islower())
+                ):
                     pieces[-1] = f"{pieces[-1]} {piece}"
                 elif piece:
                     pieces.append(piece)

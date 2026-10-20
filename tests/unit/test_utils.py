@@ -217,3 +217,16 @@ class TestSplitSentences:
             "Google told the U.S. government, e.g. regulators, about good vs. evil framing.",
             "Dr. Smith agreed.",
         ]
+
+    def test_units_and_sentence_final_abbreviations_still_split(self) -> None:
+        text = (
+            "The C2 beacon fires every 500 ms. The operator then pivots. Timeouts were "
+            "200 MS. Most victims were in the U.S. The group later expanded via St. Louis."
+        )
+        assert split_sentences(text) == [
+            "The C2 beacon fires every 500 ms.",
+            "The operator then pivots.",
+            "Timeouts were 200 MS.",
+            "Most victims were in the U.S.",
+            "The group later expanded via St. Louis.",
+        ]
