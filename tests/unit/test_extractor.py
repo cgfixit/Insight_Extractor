@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 import warnings
 from pathlib import Path
 from typing import Any
@@ -135,6 +136,96 @@ def test_regex_and_dynamic_can_run_without_model(tmp_path: Path) -> None:
     assert extractor.extract_regex_entities(text)["CVE_ID"] == ["CVE-2026-9999"]
     assert extractor.extract_regex_entities(text)["PORT_NUMBER"] == ["4444"]
     assert extractor.extract_dynamic_entities(text)
+
+
+def test_regex_extracts_urls_uuids_and_ai_domains(tmp_path: Path) -> None:
+    extractor = InsightExtractor(seed_keywords=["ransomware"], output_dir=tmp_path)
+    task = "https://www.perplexity.ai/computer/tasks/9a2f15b7-2c91-4cbb-b8a7-52def899cfce"
+    text = (
+        f"| 1 | Thread | {task}\n"
+        f"| 2 | Repeat | {task}\n"
+        "Pattern: https://www.perplexity.ai/computer/tasks/{uuid} and [docs](https://x.com/a?b=1).\n"
+        "Payload at hxxp://evil[.]example/drop.bin, then hxxps[:]//bad[.]ru/x?a=1)\n"
+        "GUID 0ECC0E47-2574-4541-BCEB-D22677E84E32.\n"
+        "Not URLs: mailto:a@b.co, http:// nothing.\n"
+        "Not domains: cloud-infra.md graph.py Safari.app\n"
+        "Not UUIDs: 9a2f15b7-2c91-4cbb-b8a7 and 9a2f15b7-2c91-4cbb-b8a7-52def899cfcee"
+    )
+
+    result = extractor.extract_regex_entities(text)
+
+    assert result["URL"] == [
+        task,
+        "https://www.perplexity.ai/computer/tasks/{uuid}",
+        "https://x.com/a?b=1",
+        "hxxp://evil[.]example/drop.bin",
+        "hxxps[:]//bad[.]ru/x?a=1",
+    ]
+    assert result["UUID"] == [
+        "9a2f15b7-2c91-4cbb-b8a7-52def899cfce",
+        "0ECC0E47-2574-4541-BCEB-D22677E84E32",
+    ]
+    # "b.co" comes from the email address, as DOMAIN already matched before this change.
+    assert result["DOMAIN"] == ["www.perplexity.ai", "x.com", "b.co"]
+
+
+def test_domain_never_reports_a_prefix_of_a_longer_host(tmp_path: Path) -> None:
+    extractor = InsightExtractor(seed_keywords=["ransomware"], output_dir=tmp_path)
+    text = (
+        "Phish at paypal.com.secure-login.ru and www.bbc.co.uk; docs on "
+        "discuss.ai.google.dev; real hosts opentools.ai, x.paypal.com, and example.com."
+    )
+
+    assert extractor.extract_regex_entities(text)["DOMAIN"] == [
+        "opentools.ai",
+        "x.paypal.com",
+        "example.com",
+    ]
+
+
+def test_domain_and_email_scale_linearly_on_dotted_runs(tmp_path: Path) -> None:
+    extractor = InsightExtractor(seed_keywords=["ransomware"], output_dir=tmp_path)
+    dotted = "a." * 20000 + " " + "-".join(f"{i % 256:02X}" for i in range(10000))
+
+    started = time.perf_counter()
+    result = extractor.extract_regex_entities(dotted)
+
+    # Generous budget: the bounded patterns take ~0.6 s here, the quadratic ones ~30 s.
+    assert time.perf_counter() - started < 3.0
+    assert "DOMAIN" not in result and "EMAIL" not in result
+
+
+def test_domain_and_email_keep_unicode_word_boundaries(tmp_path: Path) -> None:
+    extractor = InsightExtractor(seed_keywords=["ransomware"], output_dir=tmp_path)
+    # Cyrillic homoglyphs, an IDN label, an SRV name, and non-ASCII before an email.
+    text = (
+        "micr\u043esoft.com p\u0430ypal.com b\u00fccher.example.com "
+        "_ldap._tcp.dc.corp.net foo_bar.com -evil.com \u00e9user@corp.com .admin@corp.com"
+    )
+
+    result = extractor.extract_regex_entities(text)
+
+    assert result["DOMAIN"] == ["example.com", "dc.corp.net", "evil.com", "corp.com"]
+    assert result["EMAIL"] == ["admin@corp.com"]
+
+
+def test_static_pattern_regressions_under_ignorecase(tmp_path: Path) -> None:
+    extractor = InsightExtractor(seed_keywords=["ransomware"], output_dir=tmp_path)
+    text = (
+        "Wallets 1A1zP1eP5QGefi2DMPTfTL5SLmv7Divf8C, 1OIlOIlOIlOIlOIlOIlOIlOIlOIlOIl, and "
+        "3b4c5d6e7f8a9b1c1d2e3f4a5b6c7d8e. Demanded $1.5 million, later $2.5B, paid "
+        "$100 bitcoin and $500, then $1,200,000. Affected IP 10.0.0.1 Port: 4444, "
+        "port=8080, ports 80. Stole 8 terabytes and 500 gigabytes (8 TB)."
+    )
+
+    result = extractor.extract_regex_entities(text)
+    combined = extractor.pattern_registry.extract_all(text)
+
+    assert result["BTC_WALLET"] == ["1A1zP1eP5QGefi2DMPTfTL5SLmv7Divf8C"]
+    assert result["RANSOM_AMOUNT"] == ["$1.5 million", "$2.5B", "$100", "$500", "$1,200,000"]
+    assert combined["RANSOM_AMOUNT"] == result["RANSOM_AMOUNT"]
+    assert result["PORT_NUMBER"] == ["4444", "8080", "80"]
+    assert result["TB_GB_DATA"] == ["8 terabytes", "500 gigabytes", "8 TB"]
 
 
 def test_regex_entities_reuse_compiled_patterns(tmp_path: Path) -> None:
