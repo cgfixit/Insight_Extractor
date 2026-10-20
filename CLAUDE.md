@@ -315,13 +315,14 @@ tests expecting the constructor to raise on bad config; test `_load_config` dire
 error paths (existing tests do exactly this). Supported formats: `.toml`, `.yaml`/
 `.yml`, `.json` — dict at top level or it raises.
 
-### 4.13 Duplicated sentence-splitting logic
+### 4.13 Sentence splitting has one home (PR #51)
 
-**Rule:** the regex `r"(?<=[.!?])\s+"` for sentence splitting exists in **two places**:
-`tokenizer.py.tokenize_sentences` and `extractor.py.extract_key_sentences` (which also
-silently drops sentences ≤30 chars). If you change sentence-splitting behavior, change
-both or deliberately consolidate — and note that `extract_key_sentences` bypasses the
-tokenizer entirely.
+**Rule:** sentence splitting lives only in `utils.split_sentences` (Markdown-aware:
+headings and table rows are single units, list items/quotes start a unit, wrapped prose
+is joined before splitting on `(?<=[.!?])\s+`). Both `tokenizer.py.tokenize_sentences`
+and `extractor.py.extract_key_sentences` call it. Change splitting behavior there, never
+by re-adding a local regex. Note that `extract_key_sentences` still bypasses the
+tokenizer and silently drops units ≤30 chars.
 
 ### 4.14 StrEnum keys serialize as plain strings
 
@@ -452,3 +453,5 @@ Project skills live in `.claude/skills/`. Use them — they encode the checklist
 | `add-entity-pattern` | Adding a new regex entity type (the most common feature request) |
 | `deps-security-refresh` | Any dependency bump, CVE report, or scheduled security refresh |
 | `verify-no-model` | Proving a change works end-to-end without downloading BERT |
+| `verify-deps` | Checking the three pin files and every doc that quotes current pins still agree (no version changes) |
+| `insight-optimize` | An optimization/audit sweep of `main` — one focused draft PR per finding |
