@@ -163,15 +163,17 @@ and order. For example, both `CVE-2026-1234` and `cve-2026-5678` are extracted.
 | `IP_ADDRESS` | IPv4 addresses | `192.168.1.254` |
 | `HASH_SHA256` | 64-char hex strings | `3b4c5d6e...` |
 | `HASH_MD5` | 32-char hex strings | `d41d8cd9...` |
-| `DOMAIN` | Hostnames ending in `.com .net .org .io .gov .edu .onion .xyz .co` | `ransom.onion` |
+| `UUID` | 8-4-4-4-12 hex UUIDs/GUIDs | `9a2f15b7-2c91-4cbb-b8a7-52def899cfce` |
+| `URL` | `http(s)://` and `ftp://` URLs, including defanged `hxxp(s)`, `[:]`, and `[.]`; trailing `.,;:!?)` is dropped | `hxxps[:]//bad[.]ru/x` |
+| `DOMAIN` | Hostnames ending in `.com .net .org .io .ai .gov .edu .onion .xyz .co`; never a prefix of a longer host (`paypal.com.evil.ru` yields nothing) | `ransom.onion` |
 | `EMAIL` | Email addresses | `threat@dark.io` |
-| `BTC_WALLET` | Legacy (`1…`/`3…`) Bitcoin addresses | `1A1zP1eP5Q...` |
-| `RANSOM_AMOUNT` | Dollar amounts, optional `k`/`M`/`B`/million/billion scale | `$5 million`, `$186` |
+| `BTC_WALLET` | Legacy (`1…`/`3…`) Bitcoin addresses; base58 stays case-sensitive and pure-hex strings are excluded | `1A1zP1eP5Q...` |
+| `RANSOM_AMOUNT` | Dollar amounts with optional decimals and a `k`/`M`/`B`/`bn`/`mn`/million/billion scale | `$1.5 million`, `$186` |
 | `FILE_EXTENSION` | `.exe .dll .ps1 .bat .sh .py .bin .enc .locked` | `.locked` |
 | `DARK_WEB` | `.onion` hostnames | `abc123.onion` |
 | `TELEGRAM_HANDLE` | `@handle`, 5+ word characters | `@threatactor` |
-| `PORT_NUMBER` | `port NNNN` — returns the number only | `4444` |
-| `TB_GB_DATA` | Data volumes in MB/GB/TB | `8 TB`, `500 GB` |
+| `PORT_NUMBER` | `port NNNN`, `Port: NNNN`, `port=NNNN`, `ports NN` — returns the number only | `4444` |
+| `TB_GB_DATA` | Data volumes in MB/GB/TB or (giga\|tera)byte(s) | `8 TB`, `8 terabytes` |
 | `YEAR` | Four-digit years 2010–2029 | `2026` |
 | `PERCENTAGE` | Percentage values | `94.3%` |
 
