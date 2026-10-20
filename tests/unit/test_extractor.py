@@ -14,7 +14,7 @@ import pytest
 import insight_extractor.__main__ as cli
 from insight_extractor.config import KeywordCategory, StemMode
 from insight_extractor.exceptions import ConfigLoadError, ModelLoadError, StateLoadError
-from insight_extractor.extractor import InsightExtractor, _compile_word_pattern
+from insight_extractor.extractor import _TFIDF_NOISE, InsightExtractor, _compile_word_pattern
 from insight_extractor.models import ExtractResult, KeywordStats, SemanticHit, SentenceScore
 
 
@@ -543,6 +543,8 @@ def test_cli_reports_invalid_state_without_traceback(
 
 def test_empty_paths_return_empty_results(tmp_path: Path) -> None:
     extractor = InsightExtractor(seed_keywords=[], enable_dynamic_regex=False, output_dir=tmp_path)
+    # seed_keywords=[] loads THREAD_SEEDS (CLAUDE.md 4.2); empty the bank for the empty path.
+    extractor.thread_keywords = []
 
     assert extractor.extract_dynamic_entities("anything") == {}
     assert extractor.extract_semantic_keywords("anything") == []
@@ -598,6 +600,116 @@ def test_keyword_expansion_skips_fallback_when_a_known_candidate_qualifies(
 
     assert extractor.update_thread_keywords(text) == []
     assert extractor.thread_keywords == ["anchor", "known"]
+
+
+def test_keyword_expansion_ignores_urls_numbers_and_hashes(tmp_path: Path) -> None:
+    extractor = InsightExtractor(
+        seed_keywords=["anchor"],
+        similarity_threshold=0.0,
+        dynamic_expansion_top_n=50,
+        output_dir=tmp_path,
+    )
+    extractor._model = FakeModel()
+    row = (
+        "| 2026-07-04 18:02 | https://www.example.ai/computer/tasks/9a2f15b7-2c91-4cbb-b8a7-52def8 "
+        "| hxxp://evil.example/drop.bin | www.example.com/path 3b4c5d6e7f8a9b0c1d2e3f4a "
+    )
+    text = row * 20 + "ransomware operators abused log4j and c2 beacons"
+
+    added = extractor.update_thread_keywords(text)
+
+    tokens = {token for keyword in added for token in keyword.split()}
+    assert {"ransomware", "log4j", "c2"} <= tokens
+    assert not tokens & {"https", "hxxp", "www", "example", "computer", "tasks", "drop", "bin"}
+    assert not any(token.isdigit() for token in tokens)
+    assert "9a2f15b7" not in tokens and "3b4c5d6e7f8a9b0c1d2e3f4a" not in tokens
+
+
+def test_keyword_noise_stripping_is_linear_on_dotted_runs() -> None:
+    started = time.perf_counter()
+    _TFIDF_NOISE.sub(" ", "a1-" * 20000 + "a." * 20000)
+
+    # Generous budget: the linear pattern takes ~0.03 s here, a \b-led email branch ~19 s.
+    assert time.perf_counter() - started < 3.0
+
+
+def test_keyword_expansion_without_seeds_ignores_urls_and_numbers(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr("insight_extractor.extractor.THREAD_SEEDS", [])
+    extractor = InsightExtractor(seed_keywords=[], output_dir=tmp_path)
+
+    added = extractor.update_thread_keywords("https://example.com/quasar 2026 2026 quasar")
+
+    assert added == ["quasar"]
+
+
+def test_keyword_expansion_skips_case_insensitive_duplicates(tmp_path: Path) -> None:
+    extractor = InsightExtractor(
+        seed_keywords=["ESXi"], similarity_threshold=0.0, output_dir=tmp_path
+    )
+    extractor._model = FakeModel()
+
+    added = extractor.update_thread_keywords("esxi esxi esxi hypervisor")
+
+    assert "esxi" not in added
+    assert "hypervisor" in added
+    assert [kw for kw in extractor.thread_keywords if kw.lower() == "esxi"] == ["ESXi"]
+
+
+def test_keyword_expansion_does_not_backfill_dropped_phrases(tmp_path: Path) -> None:
+    extractor = InsightExtractor(
+        seed_keywords=["anchor"],
+        similarity_threshold=0.0,
+        dynamic_expansion_top_n=3,
+        output_dir=tmp_path,
+    )
+    extractor._model = FakeModel()
+    # Top three by count: "alpha", "beta", and the phantom "alpha beta" ("of" is a stop word).
+    text = "alpha of beta alpha of beta alpha of beta delta"
+
+    added = extractor.update_thread_keywords(text)
+
+    assert sorted(added) == ["alpha", "beta"]
+
+
+def test_semantic_methods_encode_keywords_lazily_on_a_fresh_extractor(tmp_path: Path) -> None:
+    extractor = build_extractor(tmp_path)
+    text = "Ransomware operators exploited a CVE. The exploit chain reached the domain controller."
+
+    assert extractor.extract_semantic_keywords(text)
+    assert extractor.extract_key_sentences(text)
+
+
+def test_semantic_methods_work_after_expanding_an_empty_bank(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr("insight_extractor.extractor.THREAD_SEEDS", [])
+    extractor = InsightExtractor(seed_keywords=[], output_dir=tmp_path, similarity_threshold=0.0)
+    extractor._model = FakeModel()
+    extractor._tokenizer = FakeTokenizer()
+    text = "Quasar photometry from the observatory. The telescope tracked quasar flares."
+
+    assert extractor.update_thread_keywords(text)
+    assert extractor.extract_semantic_keywords(text)
+
+
+def test_keyword_expansion_skips_phrases_absent_from_the_text(tmp_path: Path) -> None:
+    extractor = InsightExtractor(
+        seed_keywords=["anchor"],
+        similarity_threshold=0.0,
+        dynamic_expansion_top_n=50,
+        output_dir=tmp_path,
+    )
+    extractor._model = FakeModel()
+    text = "The threat actor also leveraged LangChain and ChromaDB. " * 3
+
+    added = extractor.update_thread_keywords(text)
+
+    assert "threat actor" in added
+    assert "threat actor leveraged" not in added
+    assert "langchain chromadb" not in added
+    assert all(" ".join(kw.split()) in text.lower() for kw in added)
 
 
 def test_model_load_failure_is_wrapped(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
