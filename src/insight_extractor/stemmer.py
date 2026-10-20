@@ -231,10 +231,14 @@ class DynamicKeywordStemmer:
             # Never-match pattern
             return re.compile(r"(?!)")
 
+        # Non-capturing on purpose: with one capturing group per keyword, re's per-branch
+        # mark bookkeeping grows with the group count, so matching ~370 keywords was
+        # quadratic in the bank (48.6 s of a 62.7 s run on a 19k-word input). Only
+        # group(0) is ever read.
         patterns: list[str] = []
         for kw in keywords:
             pat = self.generate_pattern(kw)
-            patterns.append(f"({pat})")
+            patterns.append(f"(?:{pat})")
 
         flags = 0 if self.case_sensitive else re.IGNORECASE
         try:
