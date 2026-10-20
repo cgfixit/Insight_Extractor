@@ -102,9 +102,19 @@ print('smoke logic OK:', {k: v for k, v in found.items() if v})
 "
 ```
 
-This mirrors what `.github/workflows/ci.yml` smoke-test does on a **runtime-only
-install**: if your change makes `insight_extractor.constants` import torch/transformers
-(directly or transitively), the CI job breaks even though everything above passed.
+This checks pattern behavior only — it cannot catch a heavy import, because nothing
+here inspects `sys.modules`, and the CI smoke job runs the full CLI (which loads torch
+anyway). The lazy-import invariant is guarded by `tests/unit/test_lazy_imports.py`,
+which Gate 4 already runs; to check it on its own:
+
+```bash
+python -m pytest tests/unit/test_lazy_imports.py -v
+```
+
+If it fails, your change made `insight_extractor` or one of `config`/`constants`/
+`models`/`exceptions`/`utils` import torch/transformers/sentence-transformers/sklearn
+(directly or transitively) — move that import behind the lazy `__getattr__` map or into
+a heavy module.
 
 ## Gate 6 — staging hygiene
 

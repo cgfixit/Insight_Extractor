@@ -265,21 +265,38 @@ class SentenceTokenizer:
             or not 0 <= overlap < max_tokens
         ):
             raise ValueError("overlap must be an integer in [0, max_tokens)")
-        tokens = self.tokenizer.encode(text, add_special_tokens=False)
-        if len(tokens) <= max_tokens:
+        offsets = None
+        tokens: list[int] = []
+        if getattr(self.tokenizer, "is_fast", False):
+            encoding = self.tokenizer(text, add_special_tokens=False, return_offsets_mapping=True)
+            offsets = encoding["offset_mapping"]
+            token_count = len(offsets)
+        else:
+            tokens = self.tokenizer.encode(text, add_special_tokens=False)
+            token_count = len(tokens)
+        if token_count <= max_tokens:
             return [text]
         chunks: list[str] = []
         start = 0
-        while start < len(tokens):
-            end = min(start + max_tokens, len(tokens))
-            chunk_tokens = tokens[start:end]
-            chunk_text = self.tokenizer.decode(chunk_tokens, skip_special_tokens=True)
-            chunks.append(chunk_text)
-            if end == len(tokens):
+        while start < token_count:
+            end = min(start + max_tokens, token_count)
+            if offsets is not None:
+                chunks.append(text[offsets[start][0] : offsets[end - 1][1]])
+            else:
+                chunks.append(self.tokenizer.decode(tokens[start:end], skip_special_tokens=True))
+            if end == token_count:
                 break
             start = end - overlap
         return chunks
 ```
+
+Chunk text is the verbatim source span of each token window, taken from the fast
+tokenizer's `offset_mapping`. Windows are not snapped to word boundaries: the token
+windows, overlap, and termination are the same as the decode-based implementation;
+only the emitted text changes. Decoding an uncased WordPiece window lowercases it,
+re-spaces punctuation (`https : / / www`), drops `[UNK]` characters, and can start
+with `##` pieces, and those chunks surface as `SemanticHit.context`. Slow tokenizers
+have no offsets and keep the decode path.
 
 The live `tokenize_sentences` implementation validates a positive integer budget,
 including for empty input, and uses `overlap=min(50, max_tokens - 1)` when chunking
@@ -432,7 +449,7 @@ __all__ = [
 ## pyproject.toml
 
 The live pin set is `requirements.txt` + `constraints.txt` + the `[project]` table in
-the repo-root `pyproject.toml` (`accelerate>=1.3.0`, `transformers>=5.10.0,<6.0.0`).
+the repo-root `pyproject.toml` (`accelerate>=1.15.0`, `transformers>=5.10.0,<6.0.0`).
 The block below is a historical design sketch and is **not** the current pin set.
 
 ```toml

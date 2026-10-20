@@ -65,9 +65,9 @@ dev = [
 insight-extract = "insight_extractor.__main__:main"
 
 [project.urls]
-Homepage = "https://github.com/CGFixIT/insight-extractor"
-Repository = "https://github.com/CGFixIT/insight-extractor"
-Issues = "https://github.com/CGFixIT/insight-extractor/issues"
+Homepage = "https://github.com/cgfixit/Insight_Extractor"
+Repository = "https://github.com/cgfixit/Insight_Extractor"
+Issues = "https://github.com/cgfixit/Insight_Extractor/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/insight_extractor"]
