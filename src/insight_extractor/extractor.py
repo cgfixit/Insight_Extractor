@@ -43,6 +43,24 @@ logger = logging.getLogger("insight_extractor")
 
 _MARKDOWN_SPECIAL = re.compile(r"[\\`*_{}\[\]()#+\-.!|>]")
 
+# Single-document TF-IDF ranks repeated boilerplate highest, so URL pieces, dates, counts,
+# and hash/UUID fragments outranked real terms and were persisted as keywords. Regex
+# extraction already reports those, so they are stripped and candidates need a letter.
+_TFIDF_NOISE = re.compile(
+    r"\b(?:(?:https?|hxxps?|ftp)://|www\.)\S+"
+    r"|\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b"
+    r"|\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b"
+    r"|\b(?=[0-9a-f]*\d)(?=[0-9a-f]*[a-f])[0-9a-f]{8,}\b",
+    re.IGNORECASE,
+)
+_TFIDF_TOKEN_PATTERN = r"(?u)\b(?=\w*[^\W\d_])\w\w+\b"
+
+
+def _phrase_occurs(phrase: str, haystack: str) -> bool:
+    """True if the words of *phrase* appear consecutively in *haystack*."""
+    words = r"\s+".join(map(re.escape, phrase.split()))
+    return re.search(rf"(?<!\w){words}(?!\w)", haystack) is not None
+
 
 def _markdown_text(value: str) -> str:
     """Return all of *value* as one escaped Markdown-safe line."""
@@ -444,7 +462,8 @@ class InsightExtractor:
 
         # ---- embeddings -----------------------------------------------------
         self._keyword_embeddings: npt.NDArray[np.float64] | None = None
-        self._keyword_embeddings_dirty = False
+        # Lazy: direct extract_semantic_keywords()/extract_key_sentences() calls encode on use.
+        self._keyword_embeddings_dirty = bool(self.thread_keywords)
 
         self._auto_categorize_keywords()
 
@@ -623,10 +642,12 @@ class InsightExtractor:
             stop_words="english",
             ngram_range=(1, 3),
             min_df=1,
+            token_pattern=_TFIDF_TOKEN_PATTERN,
         )
+        cleaned = _TFIDF_NOISE.sub(" ", new_text)
         try:
             # ponytail: use a rolling window only if cross-document IDF becomes a requirement.
-            tfidf_matrix = vectorizer.fit_transform([new_text])
+            tfidf_matrix = vectorizer.fit_transform([cleaned])
         except ValueError:
             return []
 
@@ -636,8 +657,16 @@ class InsightExtractor:
 
         # There is one document, so avoid an extra sparse-row slice and copy.
         scores = tfidf_matrix.toarray().ravel()
-        top_indices = np.argsort(scores)[::-1][: self.dynamic_expansion_top_n]
-        candidates = [feature_names[i] for i in top_indices if scores[i] > 0]
+        # n-grams are built after stop words and punctuation are removed, so phrases such
+        # as "threat actor leveraged" may never occur; the keyword regex could not match them.
+        haystack = cleaned.lower()
+        candidates: list[str] = []
+        for i in np.argsort(scores)[::-1]:
+            if scores[i] <= 0 or len(candidates) >= self.dynamic_expansion_top_n:
+                break
+            feature = feature_names[i]
+            if " " not in feature or _phrase_occurs(feature, haystack):
+                candidates.append(feature)
 
         if not candidates:
             return []
@@ -646,17 +675,23 @@ class InsightExtractor:
         if self._keyword_embeddings is None and self.thread_keywords:
             self._recompute_keyword_embeddings()
 
+        # TF-IDF lowercases candidates; compare case-insensitively so "esxi" does not
+        # duplicate an existing "ESXi" seed.
+        known = {kw.casefold() for kw in self.thread_keywords}
+
         # If we have no existing keywords, add top candidates verbatim
         if not self.thread_keywords:
             newly_added: list[str] = []
             for cand in candidates:
-                if cand not in self.thread_keywords:
+                if cand.casefold() not in known:
+                    known.add(cand.casefold())
                     self.thread_keywords.append(cand)
                     self.keyword_freq[cand] += 1
                     newly_added.append(cand)
             if newly_added:
                 self.stemmer.set_keywords(self.thread_keywords)
                 self.pattern_registry.regenerate_dynamic_patterns(self.thread_keywords)
+                self._keyword_embeddings_dirty = True
                 self._auto_categorize_keywords()
             return newly_added
 
@@ -679,7 +714,8 @@ class InsightExtractor:
         for cand, sim in zip(candidates, max_sims, strict=False):
             if sim >= self.similarity_threshold:
                 semantic_candidate_qualified = True
-                if cand not in self.thread_keywords:
+                if cand.casefold() not in known:
+                    known.add(cand.casefold())
                     self.thread_keywords.append(cand)
                     self.keyword_freq[cand] += 1
                     newly_added.append(cand)
@@ -687,7 +723,7 @@ class InsightExtractor:
         # ponytail: one TF-IDF fallback bounds drift while allowing cross-domain inputs.
         if not semantic_candidate_qualified:
             for cand in candidates:
-                if cand not in self.thread_keywords:
+                if cand.casefold() not in known:
                     self.thread_keywords.append(cand)
                     self.keyword_freq[cand] += 1
                     newly_added.append(cand)
