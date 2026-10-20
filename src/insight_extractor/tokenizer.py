@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import logging
-import re
 from typing import TYPE_CHECKING
 
 from insight_extractor.exceptions import ModelLoadError
+from insight_extractor.utils import split_sentences
 
 if TYPE_CHECKING:
     from transformers import PreTrainedTokenizerBase
@@ -74,7 +74,7 @@ class SentenceTokenizer:
 
     def tokenize_sentences(self, text: str, max_tokens: int = 512) -> list[str]:
         """
-        Split text into sentences using regex, then ensure each sentence
+        Split text with utils.split_sentences, then ensure each sentence
         is within the max_tokens budget by chunking oversized sentences.
 
         Raises ValueError for a nonpositive or non-integer max_tokens, even
@@ -82,8 +82,7 @@ class SentenceTokenizer:
         """
         if isinstance(max_tokens, bool) or not isinstance(max_tokens, int) or max_tokens <= 0:
             raise ValueError("max_tokens must be a positive integer")
-        # Split on sentence boundaries
-        raw_sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
+        raw_sentences = split_sentences(text)
         if not raw_sentences:
             return [text] if text.strip() else []
 

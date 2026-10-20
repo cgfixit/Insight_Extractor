@@ -39,7 +39,7 @@ from insight_extractor.models import (
 )
 from insight_extractor.stemmer import DynamicKeywordStemmer, KeywordPatternRegistry
 from insight_extractor.tokenizer import SentenceTokenizer
-from insight_extractor.utils import compute_text_hash, format_timestamp
+from insight_extractor.utils import compute_text_hash, format_timestamp, split_sentences
 
 logger = logging.getLogger("insight_extractor")
 
@@ -844,7 +844,15 @@ class InsightExtractor:
         if not self.thread_keywords or self._keyword_embeddings is None:
             return []
 
+        # encode() silently truncates at max_seq_length (256 for all-MiniLM-L6-v2, counting
+        # [CLS]/[SEP]), so 512-token chunks were scored on their first 254 tokens only.
+        window = getattr(self.model, "max_seq_length", None)
+        if isinstance(window, int) and window > 2:
+            chunk_size = min(chunk_size, window - 2)
         chunks = self.tokenizer.tokenize_sentences(text, max_tokens=chunk_size)
+        # Label lines such as "- Score: `1`" are units of their own and match the keyword
+        # they name almost verbatim; use the key-sentence floor unless nothing is longer.
+        chunks = [chunk for chunk in chunks if len(chunk) > 30] or chunks
         if not chunks:
             return []
 
@@ -894,9 +902,7 @@ class InsightExtractor:
         if not self.thread_keywords or self._keyword_embeddings is None:
             return []
 
-        raw_sentences = [
-            s.strip() for s in re.split(r"(?<=[.!?])\s+", text) if s.strip() and len(s.strip()) > 30
-        ]
+        raw_sentences = [s for s in split_sentences(text) if len(s) > 30]
         if not raw_sentences:
             return []
 

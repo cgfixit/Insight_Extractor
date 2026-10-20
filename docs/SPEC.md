@@ -285,6 +285,10 @@ The live `tokenize_sentences` implementation validates a positive integer budget
 including for empty input, and uses `overlap=min(50, max_tokens - 1)` when chunking
 oversized sentences. Zero-overlap windows preserve the entire token sequence;
 chunking stops as soon as a window reaches the final token.
+Sentence units come from `utils.split_sentences`, which `extract_key_sentences`
+also uses: wrapped prose joins until terminal punctuation, while blank lines, list
+items, quotes, headings, and Markdown/box-drawing table rows bound units, so a table
+row is never merged with its neighbours or split at a `?` inside a cell.
 
 ---
 
