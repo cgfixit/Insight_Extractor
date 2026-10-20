@@ -30,6 +30,8 @@ class PatternLabel(StrEnum):
     IP_ADDRESS = "IP_ADDRESS"
     HASH_SHA256 = "HASH_SHA256"
     HASH_MD5 = "HASH_MD5"
+    UUID = "UUID"
+    URL = "URL"
     DOMAIN = "DOMAIN"
     EMAIL = "EMAIL"
     BTC_WALLET = "BTC_WALLET"

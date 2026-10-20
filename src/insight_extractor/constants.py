@@ -395,15 +395,34 @@ REGEX_PATTERNS: RegexPatternDict = {
     PatternLabel.IP_ADDRESS: r"\b(?:\d{1,3}\.){3}\d{1,3}\b",
     PatternLabel.HASH_SHA256: r"\b[0-9a-fA-F]{64}\b",
     PatternLabel.HASH_MD5: r"\b[0-9a-fA-F]{32}\b",
-    PatternLabel.DOMAIN: r"\b(?:[a-zA-Z0-9-]+\.)+(?:com|net|org|io|gov|edu|onion|xyz|co)\b",
-    PatternLabel.EMAIL: r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
-    PatternLabel.BTC_WALLET: r"\b[13][a-km-zA-HJ-NP-Z1-9]{25,34}\b",
-    PatternLabel.RANSOM_AMOUNT: r"\$\s?\d[\d,]*(?:\.\d{2})?\s?(?:million|billion|M|B|k)?",
+    PatternLabel.UUID: r"\b[0-9a-fA-F]{8}-(?:[0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}\b",
+    # http(s)/ftp plus defanged hxxp(s), [:] and [.]; trailing punctuation is not kept.
+    PatternLabel.URL: (
+        r"\b(?:https?|hxxps?|ftp)(?::|\[:\])//(?:[^\s<>\"'`|\[\]]|\[\.\])+(?<![.,;:!?)])"
+    ),
+    # Run-start lookbehinds keep matching linear on long dotted/hyphenated runs (a leading
+    # \b let every label restart the scan: O(n^2)). The tail guard stops a listed TLD
+    # inside a longer host from yielding a prefix: paypal.com.secure-login.ru was
+    # reported as "paypal.com".
+    PatternLabel.DOMAIN: (
+        r"(?<![a-zA-Z0-9-])(?<![a-zA-Z0-9-]\.)(?:[a-zA-Z0-9-]+\.)+"
+        r"(?:com|net|org|io|ai|gov|edu|onion|xyz|co)\b(?![.-]?[a-zA-Z0-9])"
+    ),
+    # Same run-start guard as DOMAIN.
+    PatternLabel.EMAIL: r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b",
+    # Static patterns compile with re.IGNORECASE; (?-i:...) keeps base58's 0/O/I/l
+    # exclusions, and pure-hex tokens (MD5s starting with 1 or 3) are not wallets.
+    PatternLabel.BTC_WALLET: r"(?-i:\b(?![0-9a-fA-F]+\b)[13][a-km-zA-HJ-NP-Z1-9]{25,34}\b)",
+    # The unit needs a word boundary under IGNORECASE ("$100 bitcoin" gave "$100 b"), and
+    # any decimal is kept ("$1.5 million" gave "$1").
+    PatternLabel.RANSOM_AMOUNT: (
+        r"\$\s?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?(?:\s?(?:million|billion|bn|mn|[MBK])\b)?"
+    ),
     PatternLabel.FILE_EXTENSION: r"\.\b(?:exe|dll|ps1|bat|sh|py|bin|enc|locked)\b",
     PatternLabel.DARK_WEB: r"\b\w+\.onion\b",
     PatternLabel.TELEGRAM_HANDLE: r"@[A-Za-z0-9_]{5,}",
-    PatternLabel.PORT_NUMBER: r"\bport\s+(\d{2,5})\b",
-    PatternLabel.TB_GB_DATA: r"\b\d+(?:\.\d+)?\s?(?:TB|GB|MB|terabyte|gigabyte)\b",
+    PatternLabel.PORT_NUMBER: r"\bports?\s*[:=#]?\s*(\d{2,5})\b",
+    PatternLabel.TB_GB_DATA: r"\b\d+(?:\.\d+)?\s?(?:TB|GB|MB|terabytes?|gigabytes?)\b",
     PatternLabel.YEAR: r"\b20[12]\d\b",
     PatternLabel.PERCENTAGE: r"\b\d+(?:\.\d+)?%",
 }
