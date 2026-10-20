@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+from typing import Any
+
 import pytest
 
 import insight_extractor
@@ -11,13 +14,45 @@ from insight_extractor.tokenizer import SentenceTokenizer
 
 
 class FakeTokenizer:
+    """Whitespace tokenizer exposing the fast-tokenizer offset API."""
+
+    is_fast = True
+    token_pattern = r"\S+"
+
     def encode(self, text: str, *, add_special_tokens: bool = False) -> list[int]:
         del add_special_tokens
-        return list(range(len(text.split())))
+        return list(range(len(re.findall(self.token_pattern, text))))
+
+    def __call__(
+        self, text: str, *, add_special_tokens: bool = False, return_offsets_mapping: bool = False
+    ) -> dict[str, list[tuple[int, int]]]:
+        del add_special_tokens
+        assert return_offsets_mapping
+        return {"offset_mapping": [m.span() for m in re.finditer(self.token_pattern, text)]}
 
     def decode(self, tokens: list[int], *, skip_special_tokens: bool = True) -> str:
         del skip_special_tokens
         return " ".join(f"tok{i}" for i in tokens)
+
+
+class SlowFakeTokenizer(FakeTokenizer):
+    """Tokenizer without offsets, which forces the decode fallback."""
+
+    is_fast = False
+
+    def __call__(
+        self, text: str, *, add_special_tokens: bool = False, return_offsets_mapping: bool = False
+    ) -> dict[str, list[tuple[int, int]]]:
+        raise AssertionError("slow tokenizers must not be asked for offsets")
+
+
+class PunctuationTokenizer(FakeTokenizer):
+    """WordPiece-like split: punctuation is its own token, as in BERT pre-tokenization."""
+
+    token_pattern = r"\w+|[^\w\s]"
+
+    def decode(self, tokens: list[int], *, skip_special_tokens: bool = True) -> str:
+        raise AssertionError("fast tokenizers must slice the source text, not decode")
 
 
 def test_lazy_root_imports() -> None:
@@ -40,10 +75,38 @@ def test_chunk_text_short_and_long() -> None:
 
     assert tokenizer.chunk_text("one two", max_tokens=5, overlap=1) == ["one two"]
     assert tokenizer.chunk_text("one two three four five six", max_tokens=3, overlap=1) == [
+        "one two three",
+        "three four five",
+        "five six",
+    ]
+
+
+def test_chunk_text_slow_tokenizer_falls_back_to_decode() -> None:
+    tokenizer = SentenceTokenizer()
+    tokenizer._tokenizer = SlowFakeTokenizer()
+
+    assert tokenizer.chunk_text("one two", max_tokens=5, overlap=1) == ["one two"]
+    assert tokenizer.chunk_text("one two three four five six", max_tokens=3, overlap=1) == [
         "tok0 tok1 tok2",
         "tok2 tok3 tok4",
         "tok4 tok5",
     ]
+
+
+def test_chunk_text_returns_verbatim_source_spans() -> None:
+    tokenizer = SentenceTokenizer()
+    tokenizer._tokenizer = PunctuationTokenizer()
+    text = "See https://www.Perplexity.ai/Search  for C2 beacons."
+
+    chunks = tokenizer.chunk_text(text, max_tokens=6, overlap=2)
+
+    assert chunks == [
+        "See https://www",
+        "/www.Perplexity.ai",
+        ".ai/Search  for C2",
+        "for C2 beacons.",
+    ]
+    assert all(chunk in text for chunk in chunks)
 
 
 def test_tokenize_sentences_and_empty_text() -> None:
@@ -86,26 +149,63 @@ def test_tokenizer_property_raises_when_no_tokenizer_files(monkeypatch: pytest.M
         _ = tokenizer.tokenizer
 
 
+class BoundedOffsets(list[tuple[int, int]]):
+    """Offset mapping that records each window from its two edge lookups."""
+
+    def __init__(self, spans: list[tuple[int, int]], max_calls: int) -> None:
+        super().__init__(spans)
+        self.max_calls = max_calls
+        self.edges: list[int] = []
+        self.slices: list[list[int]] = []
+
+    def __getitem__(self, index: Any) -> Any:
+        if isinstance(index, int):
+            self.edges.append(index)
+            if len(self.edges) % 2 == 0:
+                if len(self.slices) >= self.max_calls:
+                    raise AssertionError("chunking exceeded the bounded window budget")
+                self.slices.append(list(range(self.edges[-2], self.edges[-1] + 1)))
+        return super().__getitem__(index)
+
+
 class BoundedTokenizer(FakeTokenizer):
     """Record token slices and fail safely if chunking stops making progress."""
 
-    def __init__(self, max_calls: int) -> None:
+    def __init__(self, max_calls: int, *, fast: bool = True) -> None:
         self.max_calls = max_calls
-        self.slices: list[list[int]] = []
+        self.is_fast = fast
+        self.offsets: BoundedOffsets | None = None
+        self.decoded: list[list[int]] = []
+
+    @property
+    def slices(self) -> list[list[int]]:
+        return self.offsets.slices if self.offsets is not None else self.decoded
+
+    def __call__(
+        self, text: str, *, add_special_tokens: bool = False, return_offsets_mapping: bool = False
+    ) -> dict[str, list[tuple[int, int]]]:
+        spans = super().__call__(
+            text, add_special_tokens=add_special_tokens, return_offsets_mapping=True
+        )["offset_mapping"]
+        self.offsets = BoundedOffsets(spans, self.max_calls)
+        return {"offset_mapping": self.offsets}
 
     def decode(self, tokens: list[int], *, skip_special_tokens: bool = True) -> str:
-        if len(self.slices) >= self.max_calls:
+        if len(self.decoded) >= self.max_calls:
             raise AssertionError("chunking exceeded the bounded decode budget")
-        self.slices.append(tokens)
+        self.decoded.append(tokens)
         return super().decode(tokens, skip_special_tokens=skip_special_tokens)
 
 
+@pytest.mark.parametrize("fast", [True, False])
 @pytest.mark.parametrize("token_count", [3, 6, 7])
 @pytest.mark.parametrize("overlap", [0, 1, 2])
-def test_chunk_text_preserves_ordered_token_coverage(token_count: int, overlap: int) -> None:
+def test_chunk_text_preserves_ordered_token_coverage(
+    token_count: int, overlap: int, fast: bool
+) -> None:
     text = " ".join(f"tok{i}" for i in range(token_count))
     tokenizer = SentenceTokenizer()
-    fake = BoundedTokenizer(max_calls=token_count)
+    fake = BoundedTokenizer(max_calls=token_count, fast=fast)
     tokenizer._tokenizer = fake
 
     chunks = tokenizer.chunk_text(text, max_tokens=3, overlap=overlap)
@@ -124,11 +224,12 @@ def test_chunk_text_preserves_ordered_token_coverage(token_count: int, overlap: 
     assert recovered == list(range(token_count))
 
 
+@pytest.mark.parametrize("fast", [True, False])
 @pytest.mark.parametrize("budget", [1, 2, 49, 50, 51, 512])
-def test_oversized_sentence_terminates_with_small_budgets(budget: int) -> None:
+def test_oversized_sentence_terminates_with_small_budgets(budget: int, fast: bool) -> None:
     token_count = budget + 3
     tokenizer = SentenceTokenizer()
-    fake = BoundedTokenizer(max_calls=token_count)
+    fake = BoundedTokenizer(max_calls=token_count, fast=fast)
     tokenizer._tokenizer = fake
 
     chunks = tokenizer.tokenize_sentences(" ".join(["word"] * token_count), max_tokens=budget)
