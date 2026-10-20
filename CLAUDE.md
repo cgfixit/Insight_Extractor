@@ -42,8 +42,10 @@ The package is deliberately usable without torch/transformers loaded:
   `KeywordPatternRegistry`, `SentenceTokenizer` through a `__getattr__` lazy-import map.
   **Do not convert these to top-level imports.**
 - `config`, `constants`, `models`, `exceptions`, `utils` must stay importable with zero
-  ML dependencies. The CI smoke test imports `insight_extractor.constants` directly on a
-  runtime-only install and will break if you add a heavy import there.
+  ML dependencies. `tests/unit/test_lazy_imports.py` enforces this: it imports the
+  package and these five modules in a fresh interpreter and fails if `torch`,
+  `transformers`, `sentence_transformers` or `sklearn` end up in `sys.modules`. (The CI
+  smoke job runs the full CLI, which loads torch anyway, so it does not guard this.)
 - The BERT model and `AutoTokenizer` load lazily on first property access
   (`extractor.model`, `tokenizer.tokenizer`). Regex and keyword pipelines
   (`extract_regex_entities`, `extract_dynamic_entities`, `find_matches`) must keep
