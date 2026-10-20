@@ -358,7 +358,7 @@ for m in stemmer.find_matches("ALPHV ransomware exploited CVE-2024-1234 via late
 
 | Method | Signature | Description |
 |--------|-----------|-------------|
-| Constructor | `KeywordPatternRegistry(static_patterns, stemmer)` | Combine static regexes with a stemmer |
+| Constructor | `KeywordPatternRegistry(*, static_patterns=None, stemmer=None)` | Combine static regexes with a stemmer |
 | `all_patterns` | property `-> dict[str, str]` | Static + dynamic patterns |
 | `regenerate_dynamic_patterns` | `(keywords)` | Rebuild dynamic patterns — call after any keyword change |
 | `extract_all` | `(text) -> dict[str, list[str]]` | All pattern matches from text |

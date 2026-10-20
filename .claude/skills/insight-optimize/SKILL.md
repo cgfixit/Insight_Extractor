@@ -84,10 +84,10 @@ the README alone — this repo once shipped a phantom-API test suite, commit `40
    → `ImportError: cannot import name 'TorchTensorParallelPlugin'` (lowering the floor
    again is ask-first); `pip-audit` surface with reachability verdicts in
    `docs/SECURITY_AUDIT.md`.
-5. **Maintainability** — the lazy-loading invariant above; the duplicated sentence-split
-   regex `r"(?<=[.!?])\s+"` in `tokenizer.tokenize_sentences` **and**
-   `extractor.extract_key_sentences` (which also drops sentences ≤30 chars — change
-   both or deliberately consolidate); the four-step keyword-mutation sequence
+5. **Maintainability** — the lazy-loading invariant above; sentence splitting
+   consolidated in `utils.split_sentences` (called by `tokenizer.tokenize_sentences`
+   **and** `extractor.extract_key_sentences`, which also drops units ≤30 chars — flag
+   any new local split regex); the four-step keyword-mutation sequence
    (`stemmer.set_keywords` → `registry.regenerate_dynamic_patterns` →
    `_recompute_keyword_embeddings` → `_auto_categorize_keywords`, canonical in
    `update_thread_keywords` / `load_state`); Windows+Linux dual-platform; state

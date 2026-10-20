@@ -11,7 +11,7 @@ Run a full optimization sweep of Insight_Extractor main and open one draft PR pe
    - **CI hygiene** (four gates: ruff check/format, mypy strict, pytest unit on py3.12+3.13; integration tests gated behind `[run-integration]`; unit tests stub the model via `_model`/`_tokenizer` injection, never download)
    - **Security posture** (gitleaks, pin consistency across requirements.txt/constraints.txt/pyproject.toml, no secrets, config input validation)
    - **Dependency-risk** (transformers `>=4.53.0,<5.0.0` / sentence-transformers / accelerate triangle, known `ModelLoadError: init_empty_weights` and `TorchTensorParallelPlugin` ImportError footguns, CVE surface via pip-audit + `docs/SECURITY_AUDIT.md`)
-   - **Maintainability** (lazy ML loading invariant, duplicated sentence-split regex in tokenizer.py + extractor.py, four-step keyword-mutation sync sequence, Windows+Linux dual-platform, state persistence, ChunkedKeywordPattern)
+   - **Maintainability** (lazy ML loading invariant, sentence splitting consolidated in utils.split_sentences — flag any new local split regex, four-step keyword-mutation sync sequence, Windows+Linux dual-platform, state persistence, ChunkedKeywordPattern)
 
    Read with the Insight_Extractor architecture in mind:
    - **Core invariant**: lazy ML loading — `config.py` / `constants.py` / `models.py` / `exceptions.py` / `utils.py` / `stemmer.py` must remain importable with **zero** torch/transformers/sentence-transformers deps (enforced by `__init__.py` `__getattr__` `_IMPORT_MAP` and the CI smoke test that imports `insight_extractor.constants` on a runtime-only install).

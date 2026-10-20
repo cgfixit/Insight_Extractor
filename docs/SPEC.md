@@ -432,7 +432,7 @@ __all__ = [
 ## pyproject.toml
 
 The live pin set is `requirements.txt` + `constraints.txt` + the `[project]` table in
-the repo-root `pyproject.toml` (`accelerate>=1.3.0`, `transformers>=5.10.0,<6.0.0`).
+the repo-root `pyproject.toml` (`accelerate>=1.15.0`, `transformers>=5.10.0,<6.0.0`).
 The block below is a historical design sketch and is **not** the current pin set.
 
 ```toml

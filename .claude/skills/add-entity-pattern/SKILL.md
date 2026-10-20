@@ -26,10 +26,11 @@ print('pattern OK')
 
 Constraints on the pattern itself:
 
-- It runs through `re.findall(pattern, text)` in `extract_regex_entities` (no flags) and
-  `re.findall(pattern, text, re.IGNORECASE)` in `KeywordPatternRegistry.extract_all` —
-  so make case-sensitivity explicit in the pattern (e.g. `[0-9a-fA-F]`) rather than
-  relying on flags, like every existing pattern does.
+- Both `extract_regex_entities` and `KeywordPatternRegistry.extract_all` compile it with
+  `re.IGNORECASE` (since `b6b9972`), so character classes cannot exclude letters by case.
+  A pattern that needs case-sensitive classes must wrap them in a scoped `(?-i:...)`
+  group, as `BTC_WALLET` does for base58's `0/O/I/l` exclusions — without it those
+  exclusions silently stop working.
 - **Avoid capture groups.** `re.findall` returns only the captured group when one
   exists. The single existing exception is `PORT_NUMBER` (returns `"4444"`, not
   `"port 4444"`) and the tuple-handling code in `extract_regex_entities` exists solely
