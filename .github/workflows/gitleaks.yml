@@ -15,22 +15,26 @@ on:
         type: string
 
 permissions:
-  # Required to read repo contents
+  # Workflow default stays read-only. security-events: write and actions: read
+  # are granted only on the gitleaks job below.
   contents: read
-  # Required to post PR annotations and upload SARIF to Security tab.
-  # NOTE: on private repos this requires the repo to have GitHub Advanced Security
-  # enabled. If not enabled, the SARIF upload step will be skipped gracefully.
-  security-events: write
-  # Required to post PR check annotations
-  actions: read
 
 jobs:
   gitleaks:
     name: Gitleaks Secret Detection
     runs-on: ubuntu-latest
+    permissions:
+      # Required to read repo contents
+      contents: read
+      # Required to post PR annotations and upload SARIF to Security tab.
+      # NOTE: on private repos this requires the repo to have GitHub Advanced Security
+      # enabled. If not enabled, the SARIF upload step will be skipped gracefully.
+      security-events: write
+      # Required to post PR check annotations
+      actions: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           # Full history needed for accurate historical scans.
           # On PRs, fetch the base ref too so gitleaks can diff properly.
@@ -40,7 +44,7 @@ jobs:
       # Run Gitleaks via the official action
       # -----------------------------------------------------------------------
       - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
         env:
           # GITHUB_TOKEN is used to post findings as PR annotations
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -60,9 +64,14 @@ jobs:
       # Skipped on private repos without GitHub Advanced Security.
       # -----------------------------------------------------------------------
       - name: Upload SARIF report to GitHub Security
-        if: always() && hashFiles('results.sarif') != ''
+        # Fork PR tokens cannot write security-events; skip rather than fail the job.
+        # Push and workflow_dispatch still upload (same repository).
+        if: |
+          always() && hashFiles('results.sarif') != '' &&
+          (github.event_name != 'pull_request' ||
+           github.event.pull_request.head.repo.full_name == github.repository)
         continue-on-error: true
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@4bfa242aa49c5f7c6770b98670d354a7dfac05f8 # v3
         with:
           sarif_file: results.sarif
           category: gitleaks
@@ -72,7 +81,7 @@ jobs:
       # -----------------------------------------------------------------------
       - name: Archive Gitleaks report
         if: always() && hashFiles('results.sarif') != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: gitleaks-sarif-report
           path: results.sarif
