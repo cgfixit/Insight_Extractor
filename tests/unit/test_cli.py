@@ -96,6 +96,22 @@ def test_save_state_failure_keeps_previous_state(
     assert [p.name for p in tmp_path.iterdir()] == ["state.json"]
 
 
+def test_cli_indents_regex_and_expansion_lines(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: Any
+) -> None:
+    source = tmp_path / "report.txt"
+    source.write_text(TEXT, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "InsightExtractor", FakeExtractor)
+
+    assert cli.main([str(source)]) == 0
+    lines = capsys.readouterr().out.splitlines()
+
+    assert "  CVE_ID: ['CVE-2026-1234']" in lines
+    header = next(i for i, line in enumerate(lines) if line.startswith("=== DYNAMIC EXPANSION"))
+    assert lines[header + 1].startswith("  ['")
+
+
 def test_console_safe_escapes_control_characters() -> None:
     assert cli._console_safe("a\x1b[2Jb\n  c\x07") == "a\\x1b[2Jb c\\x07"
 
