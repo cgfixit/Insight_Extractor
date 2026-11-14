@@ -85,6 +85,24 @@ def test_full_pipeline_with_fake_model(tmp_path: Path) -> None:
     assert "Insight Extraction Results" in md_path.read_text(encoding="utf-8")
 
 
+def test_markdown_metadata_lines_are_separate_paragraphs(tmp_path: Path) -> None:
+    extractor = build_extractor(tmp_path)
+    result = extractor.extract("Ransomware operators exploited CVE-2026-1234 at the gateway.")
+
+    report = extractor.save_results_to_markdown(result).read_text(encoding="utf-8")
+    header = report.split("---", 1)[0]
+    blocks = [block.strip() for block in header.split("\n\n") if block.strip()]
+
+    assert blocks[0] == "# Insight Extraction Results"
+    assert [block.split(":**", 1)[0] + ":**" for block in blocks[1:]] == [
+        "**Generated:**",
+        "**Input Hash:**",
+        "**Word Count:**",
+        "**Total Tracked Keywords:**",
+    ]
+    assert all("\n" not in block for block in blocks)
+
+
 def test_markdown_report_preserves_and_escapes_result_text(tmp_path: Path) -> None:
     payload = (
         "<script>alert(1)</script>\r\n## Injected Heading\n| injected | table | row | **bold**"
@@ -736,6 +754,30 @@ def test_keyword_expansion_does_not_backfill_dropped_phrases(tmp_path: Path) -> 
     added = extractor.update_thread_keywords(text)
 
     assert sorted(added) == ["alpha", "beta"]
+
+
+def test_keyword_expansion_skips_candidates_redundant_with_the_bank(tmp_path: Path) -> None:
+    extractor = InsightExtractor(
+        seed_keywords=["data breach", "conti"],
+        similarity_threshold=0.0,
+        dynamic_expansion_top_n=50,
+        output_dir=tmp_path,
+    )
+    extractor._model = FakeModel()
+    text = (
+        "Operators used leaked conti builders. The data was sold. "
+        "Mycorrhizal mycorrhizal telemetry. The starlette asgi framework failed. "
+    ) * 3
+
+    added = extractor.update_thread_keywords(text)
+
+    assert "mycorrhizal" in added
+    assert "mycorrhizal mycorrhizal" not in added
+    assert "data" not in added
+    assert not [kw for kw in added if "conti" in kw.split()]
+    assert not [kw for kw in added if {"use", "used", "uses", "using"} & set(kw.split())]
+    phrases = [kw for kw in added if " " in kw]
+    assert not [(a, b) for a in phrases for b in phrases if a != b and f" {a} " in f" {b} "]
 
 
 def test_semantic_methods_encode_keywords_lazily_on_a_fresh_extractor(tmp_path: Path) -> None:

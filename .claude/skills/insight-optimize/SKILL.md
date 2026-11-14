@@ -32,13 +32,13 @@ Module map with actual sizes (`wc -l`, 2026-11-14) and load-bearing symbols:
 | Module | LOC | Key symbols | ML imports |
 |---|---|---|---|
 | `config.py` | 46 | `StemMode`, `KeywordCategory`, `PatternLabel` — all `@final` `StrEnum` | **Zero — keep it that way** |
-| `constants.py` | 429 | `THREAD_SEEDS` (363 entries, 362 unique), `REGEX_PATTERNS` (17 patterns keyed by `PatternLabel`) | **Zero** |
+| `constants.py` | 428 | `THREAD_SEEDS` (362 keywords, uniqueness guarded by `test_constants.py`), `REGEX_PATTERNS` (17 patterns keyed by `PatternLabel`) | **Zero** |
 | `models.py` | 78 | Pydantic v2: `MatchInfo`, `KeywordStats`, `SemanticHit`, `SentenceScore`, `ExtractResult` (with `validate_timestamp` field validator — timestamps are `str`, never `datetime`) | **Zero** |
 | `exceptions.py` | 25 | `InsightExtractorError` hierarchy; subclasses mix in stdlib bases (`ConfigLoadError` + `ValueError`, `ModelLoadError` + `RuntimeError`) | **Zero** |
-| `utils.py` | 122 | `split_sentences` (the only sentence splitter), `format_timestamp`, `compute_text_hash`, filename helpers | **Zero** |
+| `utils.py` | 126 | `split_sentences` (the only sentence splitter), `format_timestamp`, `compute_text_hash`, filename helpers | **Zero** |
 | `stemmer.py` | 652 | `ChunkedKeywordPattern` (`.search`/`.finditer` over pattern chunks), `DynamicKeywordStemmer` (`generate_pattern`, `compile_keywords`, `compile_keywords_incremental`, `find_matches` → `list[MatchInfo]`), `KeywordPatternRegistry` (`regenerate_dynamic_patterns`, `extract_all`) | Zero |
 | `tokenizer.py` | 117 | `SentenceTokenizer` — `AutoTokenizer` loads lazily on `.tokenizer` property; `count_tokens`, `chunk_text`, `tokenize_sentences` | Lazy (property) |
-| `extractor.py` | 1222 | `InsightExtractor` — module-level `sentence_transformers` import, model lazy on `.model` property | Yes (module-level import) |
+| `extractor.py` | 1249 | `InsightExtractor` — module-level `sentence_transformers` import, model lazy on `.model` property | Yes (module-level import) |
 | `__main__.py` | 121 | CLI `python -m insight_extractor [file.txt]` — writes state + markdown to **CWD** | Via extractor |
 
 Constructor defaults that are **public contract** (changing any needs user sign-off):
@@ -98,7 +98,7 @@ the README alone — this repo once shipped a phantom-API test suite, commit `40
    (findall returns `"4444"`, not `"port 4444"`).
 
 Known non-findings — do not report these as problems:
-- `seed_keywords=[]` loading all 363 `THREAD_SEEDS` is documented behavior (§4.2).
+- `seed_keywords=[]` loading all 362 `THREAD_SEEDS` is documented behavior (§4.2).
 - `StrEnum` keys comparing equal to plain strings in result dicts is by design (§4.14).
 - The constructor silently swallowing `ConfigLoadError` is by design (§4.12).
 - The SARIF upload failure on this private repo is expected and `continue-on-error`.

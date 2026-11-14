@@ -368,8 +368,11 @@ joins it onto one line, and backslash-escapes Markdown punctuation, so `CVE_ID` 
 # Insight Extraction Results
 
 **Generated:** {timestamp}
+
 **Input Hash:** {input_hash}
+
 **Word Count:** {word_count}
+
 **Total Tracked Keywords:** {total_tracked_keywords}
 
 ---
@@ -412,7 +415,8 @@ joins it onto one line, and backslash-escapes Markdown punctuation, so `CVE_ID` 
 - **Case Sensitive:** {case_sensitive}
 ```
 
-Empty sections render as `*No regex entities found.*`, `*No dynamic keyword matches
+The four metadata lines are separate paragraphs so Markdown viewers do not join them
+into one line. Empty sections render as `*No regex entities found.*`, `*No dynamic keyword matches
 found.*`, or a single `| — | — |` table row.
 
 ---

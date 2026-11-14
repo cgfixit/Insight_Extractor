@@ -57,12 +57,36 @@ _TFIDF_NOISE = re.compile(
     re.IGNORECASE,
 )
 _TFIDF_TOKEN_PATTERN = r"(?u)\b(?=\w*[^\W\d_])\w\w+\b"
+# scikit-learn's stop list drops light verbs such as "make" and "take" but not these. They
+# are filtered after ranking, not as stop words, so lower-ranked n-grams are not pulled in.
+_LIGHT_WORDS = frozenset({"use", "used", "uses", "using", "vs"})
 
 
 def _phrase_occurs(phrase: str, haystack: str) -> bool:
     """True if the words of *phrase* appear consecutively in *haystack*."""
     words = r"\s+".join(map(re.escape, phrase.split()))
     return re.search(rf"(?<!\w){words}(?!\w)", haystack) is not None
+
+
+def _drop_redundant_candidates(candidates: list[str], known: set[str]) -> list[str]:
+    """Keep TF-IDF candidates that add vocabulary to the casefolded keyword bank *known*."""
+    # The semantic gate takes the best match over the whole bank, so lexical overlap alone
+    # passed "data" (inside "data breach") and "used leaked conti" (contains "conti").
+    phrase_words = {word for kw in known if " " in kw for word in re.findall(r"\w+", kw)}
+    kept: list[str] = []
+    for cand in candidates:
+        words = cand.split()
+        if len(set(words)) < len(words) or _LIGHT_WORDS.intersection(words):
+            continue  # "mycorrhizal mycorrhizal", "uses bert": repeats and light verbs, no topic
+        if len(words) == 1:
+            if cand in phrase_words:
+                continue  # a bare word of an existing phrase only broadens matching
+        elif any(_compile_word_pattern(kw).search(cand) for kw in known):
+            continue  # an existing keyword already matches every span of this phrase
+        elif any(" " in k and (_phrase_occurs(k, cand) or _phrase_occurs(cand, k)) for k in kept):
+            continue  # nested ("starlette asgi" in "starlette asgi framework"): keep the first
+        kept.append(cand)
+    return kept
 
 
 def _markdown_text(value: str) -> str:
@@ -672,6 +696,7 @@ class InsightExtractor:
         """
         Use *new_text* as the TF-IDF corpus and add semantically close keywords,
         or one top-ranked unseen candidate when no semantic candidate qualifies.
+        Candidates redundant with the bank (see _drop_redundant_candidates) are skipped.
         """
         if not auto_expand:
             return []
@@ -708,6 +733,10 @@ class InsightExtractor:
             if scores[i] > 0
             and (" " not in feature_names[i] or _phrase_occurs(feature_names[i], haystack))
         ]
+        # TF-IDF lowercases candidates; compare case-insensitively so "esxi" does not
+        # duplicate an existing "ESXi" seed.
+        known = {" ".join(kw.casefold().split()) for kw in self.thread_keywords}
+        candidates = _drop_redundant_candidates(candidates, known)
 
         if not candidates:
             return []
@@ -715,10 +744,6 @@ class InsightExtractor:
         # Ensure embeddings are fresh
         if self._keyword_embeddings is None and self.thread_keywords:
             self._recompute_keyword_embeddings()
-
-        # TF-IDF lowercases candidates; compare case-insensitively so "esxi" does not
-        # duplicate an existing "ESXi" seed.
-        known = {kw.casefold() for kw in self.thread_keywords}
 
         # If we have no existing keywords, add top candidates verbatim
         if not self.thread_keywords:
@@ -1035,11 +1060,13 @@ class InsightExtractor:
         md_path = self.output_dir / filename
         ts = result.timestamp
 
+        # Blank lines between the metadata lines: as one paragraph, Markdown viewers joined
+        # them into a single run-on line. Each line's own text is unchanged for parsers.
         lines: list[str] = [
             "# Insight Extraction Results\n",
-            f"**Generated:** {_markdown_text(ts)}",
-            f"**Input Hash:** {_markdown_text(result.input_hash)}",
-            f"**Word Count:** {result.word_count}",
+            f"**Generated:** {_markdown_text(ts)}\n",
+            f"**Input Hash:** {_markdown_text(result.input_hash)}\n",
+            f"**Word Count:** {result.word_count}\n",
             f"**Total Tracked Keywords:** {result.total_tracked_keywords}",
             "\n---\n",
         ]
