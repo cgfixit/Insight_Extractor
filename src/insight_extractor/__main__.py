@@ -84,7 +84,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     print("\n=== REGEX ENTITIES ===")
     for etype, vals in results.regex_entities.items():
         more = f" ... (+{len(vals) - 10} more)" if len(vals) > 10 else ""
-        print(_console_safe(f"  {etype}: {vals[:10]}{more}"))
+        # Indent outside _console_safe: it collapses whitespace, leading spaces included.
+        print(f"  {_console_safe(f'{etype}: {vals[:10]}{more}')}")
 
     print("\n=== DYNAMIC KEYWORD MATCHES ===")
     for etype, vals in results.dynamic_keyword_matches.items():
@@ -103,7 +104,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     print(f"\n=== DYNAMIC EXPANSION: +{len(results.newly_expanded_keywords)} new keywords ===")
     if results.newly_expanded_keywords:
-        print(_console_safe(f"  {results.newly_expanded_keywords}"))
+        print(f"  {_console_safe(str(results.newly_expanded_keywords))}")
 
     print(f"\nTotal tracked keywords: {results.total_tracked_keywords}")
 

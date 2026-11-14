@@ -27,19 +27,19 @@ regex addition — stop and get explicit user justification first (CLAUDE.md §6
 
 ## The codebase you are scanning (ground truth, verified against source)
 
-Module map with actual sizes and load-bearing symbols:
+Module map with actual sizes (`wc -l`, 2026-11-14) and load-bearing symbols:
 
 | Module | LOC | Key symbols | ML imports |
 |---|---|---|---|
-| `config.py` | 44 | `StemMode`, `KeywordCategory`, `PatternLabel` — all `@final` `StrEnum` | **Zero — keep it that way** |
-| `constants.py` | 415 | `THREAD_SEEDS` (363 keywords), `REGEX_PATTERNS` (15 patterns keyed by `PatternLabel`) | **Zero** |
-| `models.py` | 54 | Pydantic v2: `MatchInfo`, `KeywordStats`, `SemanticHit`, `SentenceScore`, `ExtractResult` (with `validate_timestamp` field validator — timestamps are `str`, never `datetime`) | **Zero** |
+| `config.py` | 46 | `StemMode`, `KeywordCategory`, `PatternLabel` — all `@final` `StrEnum` | **Zero — keep it that way** |
+| `constants.py` | 429 | `THREAD_SEEDS` (363 entries, 362 unique), `REGEX_PATTERNS` (17 patterns keyed by `PatternLabel`) | **Zero** |
+| `models.py` | 78 | Pydantic v2: `MatchInfo`, `KeywordStats`, `SemanticHit`, `SentenceScore`, `ExtractResult` (with `validate_timestamp` field validator — timestamps are `str`, never `datetime`) | **Zero** |
 | `exceptions.py` | 25 | `InsightExtractorError` hierarchy; subclasses mix in stdlib bases (`ConfigLoadError` + `ValueError`, `ModelLoadError` + `RuntimeError`) | **Zero** |
-| `utils.py` | 42 | `format_timestamp`, `compute_text_hash`, filename helpers | **Zero** |
-| `stemmer.py` | 633 | `ChunkedKeywordPattern` (`.search`/`.finditer` over pattern chunks), `DynamicKeywordStemmer` (`generate_pattern`, `compile_keywords`, `compile_keywords_incremental`, `find_matches` → `list[MatchInfo]`), `KeywordPatternRegistry` (`regenerate_dynamic_patterns`, `extract_all`) | Zero |
-| `tokenizer.py` | 72 | `SentenceTokenizer` — `AutoTokenizer` loads lazily on `.tokenizer` property; `count_tokens`, `chunk_text`, `tokenize_sentences` | Lazy (property) |
-| `extractor.py` | 1043 | `InsightExtractor` — module-level `sentence_transformers` import, model lazy on `.model` property | Yes (module-level import) |
-| `__main__.py` | 71 | CLI `python -m insight_extractor [file.txt]` — writes state + markdown to **CWD** | Via extractor |
+| `utils.py` | 122 | `split_sentences` (the only sentence splitter), `format_timestamp`, `compute_text_hash`, filename helpers | **Zero** |
+| `stemmer.py` | 652 | `ChunkedKeywordPattern` (`.search`/`.finditer` over pattern chunks), `DynamicKeywordStemmer` (`generate_pattern`, `compile_keywords`, `compile_keywords_incremental`, `find_matches` → `list[MatchInfo]`), `KeywordPatternRegistry` (`regenerate_dynamic_patterns`, `extract_all`) | Zero |
+| `tokenizer.py` | 117 | `SentenceTokenizer` — `AutoTokenizer` loads lazily on `.tokenizer` property; `count_tokens`, `chunk_text`, `tokenize_sentences` | Lazy (property) |
+| `extractor.py` | 1222 | `InsightExtractor` — module-level `sentence_transformers` import, model lazy on `.model` property | Yes (module-level import) |
+| `__main__.py` | 121 | CLI `python -m insight_extractor [file.txt]` — writes state + markdown to **CWD** | Via extractor |
 
 Constructor defaults that are **public contract** (changing any needs user sign-off):
 `similarity_threshold=0.38`, `top_k=10`, `dynamic_expansion_top_n=15`,
@@ -49,8 +49,10 @@ Constructor defaults that are **public contract** (changing any needs user sign-
 `__init__.py` (`__version__ = "2.0.0"`) does top-level imports of the light modules and
 routes the four heavy classes (`InsightExtractor`, `DynamicKeywordStemmer`,
 `KeywordPatternRegistry`, `SentenceTokenizer`) through a `__getattr__` `_IMPORT_MAP`.
-The CI smoke test imports `insight_extractor.constants` on a runtime-only install —
-any heavy import creeping into a light module breaks it.
+`tests/unit/test_lazy_imports.py` imports the package and the light modules in a fresh
+interpreter and fails if torch/transformers/sentence-transformers/sklearn load — any heavy
+import creeping into a light module breaks it. (The CI smoke job runs the full CLI, which
+loads torch anyway, so it does not guard this.)
 
 ## Step 1 — Scan `main` across five dimensions
 

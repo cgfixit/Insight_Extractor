@@ -57,14 +57,19 @@ Insight_Extractor/
     ├── conftest.py
     ├── unit/                # Required CI — model-free
     │   ├── __init__.py
-    │   ├── test_stemmer.py
-    │   ├── test_models.py
-    │   ├── test_tokenizer.py
+    │   ├── test_cli.py
     │   ├── test_exceptions.py
     │   ├── test_extractor.py
+    │   ├── test_extractor_encoding.py
+    │   ├── test_lazy_imports.py
+    │   ├── test_models.py
+    │   ├── test_stemmer.py
+    │   ├── test_tokenizer.py
     │   └── test_utils.py
     └── integration/         # Optional CI — not a required gate
         ├── __init__.py
+        ├── conftest.py      # Fixtures with fake model/tokenizer attached
+        ├── fakes.py         # FakeModel / FakeTokenizer / attach_fakes
         ├── test_extractor.py
         └── test_e2e.py
 ```
@@ -186,10 +191,14 @@ class ExtractResult(BaseModel):
 class InsightExtractorError(Exception):
     """Base exception for the insight_extractor package."""
 
-class ConfigLoadError(InsightExtractorError):
+    def __init__(self, message: str, *, details: dict[str, object] | None = None) -> None:
+        super().__init__(message)
+        self.details: dict[str, object] = details if details is not None else {}
+
+class ConfigLoadError(InsightExtractorError, ValueError):
     """Raised when configuration file loading fails."""
 
-class ModelLoadError(InsightExtractorError):
+class ModelLoadError(InsightExtractorError, RuntimeError):
     """Raised when the BERT model fails to load."""
 
 class StateLoadError(InsightExtractorError):
@@ -222,30 +231,32 @@ REGEX_PATTERNS: RegexPatternDict = {
 ## Module: `tokenizer.py`
 
 ```python
-from transformers import AutoTokenizer
+if TYPE_CHECKING:
+    from transformers import PreTrainedTokenizerBase
 
 class SentenceTokenizer:
     """Sentence tokenization using the model's HuggingFace tokenizer."""
 
     def __init__(self, model_name: str = "sentence-transformers/all-MiniLM-L6-v2") -> None:
         self.model_name = model_name
-        self._tokenizer: AutoTokenizer | None = None
+        self._tokenizer: PreTrainedTokenizerBase | None = None
 
     @property
-    def tokenizer(self) -> AutoTokenizer:
+    def tokenizer(self) -> PreTrainedTokenizerBase:
         if self._tokenizer is None:
-            self._tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+            from transformers import AutoTokenizer  # lazy: keeps import torch-free
+
+            loaded = AutoTokenizer.from_pretrained(self.model_name)
+            if loaded is None:
+                raise ModelLoadError(f"No tokenizer found for model '{self.model_name}'")
+            self._tokenizer = loaded
         return self._tokenizer
 
     def tokenize_sentences(self, text: str, max_tokens: int = 512) -> list[str]:
         """
-        Split text into sentences using the tokenizer's capabilities.
-        Falls back to regex sentence splitting if tokenizer lacks sentence-level support.
-        Each sentence is guaranteed to be within max_tokens token budget.
+        Split text with utils.split_sentences, then chunk any sentence over
+        max_tokens with chunk_text(overlap=min(50, max_tokens - 1)).
         """
-        # Try tokenizer's built-in sentence splitting
-        # If not available, use regex: r"(?<=[.!?])\s+"
-        # Then chunk sentences that exceed max_tokens using tokenizer.encode + sliding window
 
     def count_tokens(self, text: str) -> int:
         """Return token count for text."""
@@ -283,7 +294,8 @@ class SentenceTokenizer:
             if offsets is not None:
                 chunks.append(text[offsets[start][0] : offsets[end - 1][1]])
             else:
-                chunks.append(self.tokenizer.decode(tokens[start:end], skip_special_tokens=True))
+                decoded = self.tokenizer.decode(tokens[start:end], skip_special_tokens=True)
+                chunks.append(decoded if isinstance(decoded, str) else " ".join(decoded))
             if end == token_count:
                 break
             start = end - overlap
@@ -348,37 +360,60 @@ class InsightExtractor:
         ...
 ```
 
-The `save_results_to_markdown` method formats results as:
+The `save_results_to_markdown` method formats results as follows (live format since
+PR #15; every interpolated value passes through `_markdown_text`, which HTML-escapes it,
+joins it onto one line, and backslash-escapes Markdown punctuation, so `CVE_ID` is written
+`CVE\_ID`):
 ```markdown
 # Insight Extraction Results
 
-- **Timestamp**: {timestamp}
-- **Input Hash**: {input_hash}
-- **Word Count**: {word_count}
-- **Total Tracked Keywords**: {total_tracked_keywords}
+**Generated:** {timestamp}
+**Input Hash:** {input_hash}
+**Word Count:** {word_count}
+**Total Tracked Keywords:** {total_tracked_keywords}
+
+---
 
 ## Regex Entities
 
-### CVE_ID
+### CVE\_ID
+
 - match1
 - match2
 
 ## Dynamic Keyword Matches
-...
+
+### DYNAMIC\_KEYWORD
+
+- match1
 
 ## Semantic Keywords
+
 | Keyword | Score | Context |
 |---------|-------|---------|
-...
+| {keyword} | {score:.4f} | {context} |
 
 ## Key Sentences
+
 | Score | Sentence |
 |-------|----------|
-...
+| {score:.4f} | {sentence} |
+
+## Newly Expanded Keywords
+
+{comma-separated keywords, or *No new keywords expanded.*}
 
 ## Keyword Statistics
-...
+
+- **Total Keywords:** {total_keywords}
+- **Categories:** {category_counts as JSON}
+- **Top Keywords:** {top_keywords}
+- **Stem Mode:** {stem_mode}
+- **Case Sensitive:** {case_sensitive}
 ```
+
+Empty sections render as `*No regex entities found.*`, `*No dynamic keyword matches
+found.*`, or a single `| — | — |` table row.
 
 ---
 
@@ -386,16 +421,25 @@ The `save_results_to_markdown` method formats results as:
 
 ```python
 import logging
-from pathlib import Path
+from datetime import datetime
 
 def setup_logging(level: int = logging.INFO) -> logging.Logger:
     ...
 
-def truncate_text(text: str, max_length: int = 120) -> str:
+def truncate_text(text: str, max_length: int = 120, suffix: str = "...") -> str:
     ...
 
 def sanitize_filename(name: str) -> str:
     ...
+
+def split_sentences(text: str) -> list[str]:
+    ...  # the single Markdown-aware sentence splitter (see tokenizer.py above)
+
+def format_timestamp(dt: datetime | None = None) -> str:
+    ...  # ISO 8601 UTC with a trailing "Z"
+
+def compute_text_hash(text: str, length: int = 16) -> str:
+    ...  # truncated SHA-256 hex digest
 ```
 
 ---
@@ -441,8 +485,12 @@ __all__ = [
     "ModelLoadError",
     "StateLoadError",
     "PatternCompileError",
+    "__version__",
 ]
 ```
+
+The four heavy classes resolve through a module `__getattr__` lazy-import map, so
+`import insight_extractor` does not import torch (`tests/unit/test_lazy_imports.py`).
 
 ---
 
