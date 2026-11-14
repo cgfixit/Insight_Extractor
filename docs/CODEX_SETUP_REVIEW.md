@@ -9,6 +9,14 @@ bullets (Porter/lemmatization, Windows-only install, missing LICENSE) are resolv
 Finding 2 (stale integration `AutoTokenizer` mocks) is now documented as the real
 optional-CI story; the test files were not changed.
 
+**2026-11-14 addendum:** all three code follow-ups below are resolved on `main`. Finding 1:
+`chunk_text`/`tokenize_sentences` validate budget and overlap (`4c36c20`, #46). Finding 2:
+the integration suite injects `_model`/`_tokenizer` doubles via `tests/integration/fakes.py`
+(`ef2159a`), and 17 tests pass offline. Finding 3: `load_state` validates through
+`_SavedState` before mutating anything (`46b9bb2`, #47). The validation counts below
+(118 unit tests, the failing E2E diagnostic) describe the 2026-09-06 snapshot, not
+current `main`.
+
 ## Architecture and scope
 
 The packaged application is `src/insight_extractor`, installed with hatchling and

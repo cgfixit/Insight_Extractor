@@ -1,5 +1,5 @@
 # Security Audit Report — insight-extractor v2.0.0
-**Date:** 2026-06-24 (accelerate compatibility addendum: 2026-07-08; pip-audit triage addendum: 2026-10-14; transformers 5.x migration: 2026-10-15; accelerate fix: 2026-10-17)
+**Date:** 2026-06-24 (accelerate compatibility addendum: 2026-07-08; pip-audit triage addendum: 2026-10-14; transformers 5.x migration: 2026-10-15; accelerate fix: 2026-10-17; re-verification: 2026-11-14)
 **Scanner tools:** pip-audit, bandit, detect-secrets  
 **Scope:** `src/`, `requirements.txt`, `constraints.txt`, `.github/workflows/`
 
@@ -12,14 +12,15 @@
 | Critical | 0 | — |
 | High | 0 | — |
 | Medium (SAST) | 1 | Accepted risk — see B615 below |
+| Low (SAST) | 1 | False positive — see B105 below |
 | CVE — Reachable | 0 | — |
 | CVE — Unreachable | 0 | — |
 | CVE — Fixed by upgrade | 20 listed | 14 via transformers 4.53.0; 5 via transformers 5.19.0; 1 via accelerate 1.15.0 |
 | CVE — No longer reported | 8 | CVE-2025-1492x conversion-script series: not reported by `pip-audit` against transformers 5.19.0 |
 | Hardcoded secrets | 0 | Clean |
-| Unpinned GH Actions | 0 | All pinned to @vN |
+| Unpinned GH Actions | 0 | All pinned to full commit SHAs (since #61) |
 
-**Bottom line:** The current pins are `transformers==5.19.0` and `accelerate==1.15.0`. The accelerate upgrade addresses the last advisory reported against the previous pinned set (PYSEC-2026-3804). One SAST medium (HuggingFace model revision unpinned) remains accepted. See the dated sections below for historical findings and reachability assessments.
+**Bottom line:** The current pins are `transformers==5.19.0` and `accelerate==1.15.0`. The accelerate upgrade addresses the last advisory reported against the previous pinned set (PYSEC-2026-3804). One SAST medium (HuggingFace model revision unpinned) remains accepted. The 2026-11-14 re-verification found no new advisories against the pinned set. See the dated sections below for historical findings and reachability assessments.
 
 ---
 
@@ -33,7 +34,7 @@
 | [CVE-2024-11393](https://osv.dev/vulnerability/GHSA-wrfc-pvp9-mr9g) | High | RCE — MaskFormer deserialization | 4.48.0 |
 | [CVE-2024-11394](https://osv.dev/vulnerability/GHSA-hxxf-235m-72v3) | High | RCE — Trax model deserialization | 4.48.0 |
 | [CVE-2024-12720](https://osv.dev/vulnerability/GHSA-6rvg-6v2m-4j46) | Medium | ReDoS — tokenization_nougat_fast | 4.48.0 |
-| [CVE-2025-2099](https://osv.dev/vulnerability/GHSA-qq3j-4f4f-9583) | Medium | ReDoS — preprocess_string() | 4.49.0 |
+| [CVE-2025-2099](https://osv.dev/vulnerability/GHSA-qq3j-4f4f-9583) | Medium | ReDoS — preprocess_string() | 4.50.0 |
 | [CVE-2025-1194](https://osv.dev/vulnerability/GHSA-fpwr-67px-3qhx) | Medium | ReDoS — GPT-NeoX-Japanese tokenizer | 4.50.0 |
 | [CVE-2025-3263](https://osv.dev/vulnerability/GHSA-q2wp-rjmx-x6x9) | Medium | ReDoS — get_configuration_file() | 4.51.0 |
 | [CVE-2025-3264](https://osv.dev/vulnerability/GHSA-jjph-296x-mrcr) | Medium | ReDoS — get_imports() | 4.51.0 |
@@ -217,14 +218,28 @@ The accelerate fix version was corrected in the 2026-10-17 update above.
 
 ### B615 — HuggingFace Unsafe Download (MEDIUM / HIGH confidence)
 
-**File:** `src/insight_extractor/tokenizer.py:26`  
+**File:** `src/insight_extractor/tokenizer.py:34` (bandit 1.9.4, 2026-11-14)  
 **CWE:** [CWE-494](https://cwe.mitre.org/data/definitions/494.html) — Download of Code Without Integrity Check  
-**Details:** `SentenceTransformer(model_name)` called without a pinned `revision=` hash. If the model hub is compromised, a malicious model update could be pulled.  
-**Mitigation:** Pin the model revision in production:
+**Details:** `AutoTokenizer.from_pretrained(self.model_name)` is called without a pinned `revision=`. The model itself has the same gap: `SentenceTransformer(self.model_name)` (`extractor.py:556`) also omits a revision, though bandit only flags `from_pretrained`. If the Hub repo is compromised, a malicious update could be pulled.  
+**Mitigation:** Pin both loads to a full commit SHA in production. A short or nonexistent
+revision raises `RevisionNotFoundError`. The example previously documented here,
+`revision="c9b44c9"`, does not exist on the Hub (404). The revision below is the
+`main` commit as of 2026-11-14, verified to load and encode to shape `(1, 384)`:
 ```python
-SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", revision="c9b44c9")
+REVISION = "1110a243fdf4706b3f48f1d95db1a4f5529b4d41"
+SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", revision=REVISION)
+AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2", revision=REVISION)
 ```
 **Status:** Accepted for development use. Recommend pinning for any production deployment.
+Pinning is not configurable through `InsightExtractor`'s public API today, so adopting it
+is an API change.
+
+### B105 — Hardcoded password string (LOW / MEDIUM confidence) — false positive
+
+**File:** `src/insight_extractor/extractor.py:59` (first reported by bandit 1.9.4 on 2026-11-14)  
+**Details:** `_TFIDF_TOKEN_PATTERN = r"(?u)\b(?=\w*[^\W\d_])\w\w+\b"` is flagged because the
+name contains `TOKEN`. It is the scikit-learn `TfidfVectorizer` token regex, not a credential.  
+**Status:** False positive; no change.
 
 ---
 
@@ -236,7 +251,10 @@ SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", revision="c9b44c9"
 
 ## GitHub Actions Audit
 
-**Result:** All actions pinned to `@vN` version tags. No SHA-pinning (best practice for supply chain hardening, lower priority for personal projects).
+**Result (re-checked 2026-11-14):** every `uses:` in `ci.yml` and `gitleaks.yml` is pinned to a
+full 40-character commit SHA, with the major tag as a trailing comment
+(`actions/checkout@11d5960… # v4`), since commit `8ee9136` (#61). Before that, actions
+were pinned only to `@vN` tags.
 
 ---
 
@@ -342,6 +360,37 @@ found on 2026-10-14 are triaged under CVE Findings above. `transformers==4.53.0`
 -    "accelerate>=0.26.0",
 +    "accelerate>=1.3.0",
 ```
+
+---
+
+## Re-verification 2026-11-14 (no pin change)
+
+Clean venvs (CPython 3.12.3 and 3.13.18, CPU `torch==2.15.0+cpu`) installed with
+`pip install -r requirements.txt -c constraints.txt` and `pip install -e ".[dev]" -c constraints.txt`:
+
+- `pip check`: no broken requirements. Import triangle (`init_empty_weights`,
+  `TorchTensorParallelPlugin`, `SentenceTransformer`) OK on both interpreters.
+- `pip-audit` (installed environment) and `pip-audit -r requirements.txt`: no known
+  vulnerabilities. PyPI also lists none against `transformers==5.19.0`,
+  `accelerate==1.15.0`, or `sentence-transformers==5.6.0`.
+- Every advisory linked in the tables above was cross-checked against PyPI's vulnerability
+  data (`api.osv.dev` was unreachable from the sandbox). One fix version was wrong:
+  CVE-2025-2099 / GHSA-qq3j-4f4f-9583 is fixed in transformers **4.50.0**, not 4.49.0
+  (4.49.0 is still listed as affected). Corrected above.
+- bandit 1.9.4 on `src/insight_extractor` (2,367 LOC): B615 (Medium) and B105 (Low, false
+  positive), both documented above.
+- ruff, ruff format, mypy --strict, 312 unit tests, and 17 integration tests pass on both
+  interpreters. Live `all-MiniLM-L6-v2` load plus a full CLI run on `src/sample_input.txt`
+  succeeded on 3.12. This sandbox needed `HF_HUB_DISABLE_XET=1` for the first download.
+- CI-equivalent unconstrained resolution (`pip install -e ".[dev]"`, no constraints)
+  picked transformers 5.23.0, sentence-transformers 5.7.0, scikit-learn 1.9.1,
+  numpy 2.5.4, pydantic 2.14.3, PyYAML 6.0.3. mypy and the unit tests pass, and the
+  live-model CLI output is identical to the pinned run.
+
+**Upstream drift (informational, no action taken):** PyPI now has sentence-transformers
+6.3.0, which the `<6.0.0` ceiling excludes, plus transformers 5.23.0, scikit-learn 1.9.1,
+numpy 2.5.4, pydantic 2.14.3, and PyYAML 6.0.3. No advisory forces a bump. Raising the
+ceiling or any pin is an ask-first change (CLAUDE.md §6).
 
 ---
 

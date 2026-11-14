@@ -3,8 +3,8 @@
 Turn a wall of threat-intel, OSINT, or security text into structured, typed insights in one
 call:
 
-1. **Regex entity extraction** — 15 pre-built IOC patterns (CVEs, hashes, IPs, wallets,
-   `.onion` domains, ports, …). No model required.
+1. **Regex entity extraction** — 17 pre-built IOC patterns (CVEs, hashes, UUIDs, URLs, IPs,
+   wallets, `.onion` domains, ports, …). No model required.
 2. **Dynamic keyword matching** — a 363-term seed bank with configurable stemming
    (exact, suffix-expansion, prefix, suffix, fuzzy, raw regex), compiled into chunked
    patterns that scale to thousands of keywords.
@@ -52,7 +52,9 @@ python -m pip install -e .
 ```
 
 On Windows, replace the activation line with `.venv\Scripts\activate` (cmd) or
-`.venv\Scripts\Activate.ps1` (PowerShell).
+`.venv\Scripts\Activate.ps1` (PowerShell). On CPU-only Linux, run
+`python -m pip install torch --index-url https://download.pytorch.org/whl/cpu` first;
+otherwise pip resolves the much larger CUDA build of `torch`.
 
 Run the CLI on a file, or with no argument to use the built-in demo text (ransomware,
 OSINT, CVE, and AI-pipeline content — a good end-to-end install check):
@@ -112,6 +114,11 @@ python -m pip install "accelerate>=1.15.0" --upgrade
 `requirements.txt` requires `accelerate>=1.15.0` and `constraints.txt` pins
 `1.15.0`, so fresh installs are unaffected. The error only appears with an older
 `accelerate` left over from a previous environment.
+
+A third, unrelated failure: behind a proxy that blocks Hugging Face's Xet transfer
+backend, the first model download stalls for minutes and then fails with `error: Failed
+to load SentenceTransformer model ... Can't load the model for ...` (API callers get
+`ModelLoadError`). Set `HF_HUB_DISABLE_XET=1` to fall back to plain HTTPS downloads.
 
 ---
 
@@ -190,7 +197,7 @@ extractor = InsightExtractor(
     model_name="sentence-transformers/all-MiniLM-L6-v2",  # HF model ID or local path
     config_path=None,              # optional .toml / .yaml / .yml / .json (see below)
     seed_keywords=None,            # None *or* [] both load THREAD_SEEDS (363 terms)
-    top_k=10,                      # max results from extract_key_sentences()
+    top_k=10,                      # key sentences kept by extract() (direct calls use top_n)
     similarity_threshold=0.38,     # cosine threshold for semantic hits (0.0–1.0)
     dynamic_expansion_top_n=15,    # TF-IDF candidates considered per expansion
     # keyword-only from here:
@@ -345,10 +352,10 @@ for m in stemmer.find_matches("ALPHV ransomware exploited CVE-2024-1234 via late
 |--------|-----------|-------------|
 | Constructor | `DynamicKeywordStemmer(*, stem_mode, case_sensitive, custom_suffixes, max_pattern_length)` | Keyword-only constructor |
 | `generate_pattern` | `(keyword, mode=None) -> str` | Regex pattern for one keyword |
-| `generate_stem_variations` | `(keyword) -> list[str]` | All stemmed forms |
+| `generate_stem_variations` | `(keyword) -> list[str]` | Keyword plus lowercase `keyword + suffix` per configured suffix; a keyword already ending in a known suffix is not expanded. Not used by matching |
 | `compile_keywords` | `(keywords) -> KeywordPattern` | One logical pattern, chunked internally for large banks |
 | `compile_keywords_incremental` | `(keywords) -> KeywordPattern` | Recompile only the appended tail when the bank grows |
-| `compile_typed_patterns` | `(keywords) -> dict[str, re.Pattern]` | Per-keyword typed patterns |
+| `compile_typed_patterns` | `(keywords) -> dict[str, KeywordPattern]` | One pattern per heuristic bucket: `technical_terms`, `proper_nouns`, `general_terms` (empty buckets omitted) |
 | `find_matches` | `(text) -> list[MatchInfo]` | All keyword matches with positions (`.match .keyword .start .end .stemmed`) |
 | `add_keyword` / `remove_keyword` | `(keyword)` | Mutate the bank and invalidate caches |
 | `set_keywords` | `(keywords)` | Replace the full keyword set |
@@ -427,7 +434,9 @@ Insight_Extractor/
 ├── docs/
 │   ├── SPEC.md                 # Design reference; source code is the behavioural authority
 │   ├── SECURITY_AUDIT.md       # Dependency CVE triage with reachability verdicts
-│   └── CODEX_SETUP_REVIEW.md   # Verified Codex setup scope
+│   ├── CODEX_SETUP_REVIEW.md   # Verified Codex setup scope
+│   ├── insight_extractor.py    # Legacy standalone stemmer script (see below)
+│   └── scripts/                # Legacy script inputs and sample output
 ├── src/
 │   ├── sample_input.txt        # 19k-word AI-safety reference corpus
 │   ├── sample_extracted_insights.md
@@ -435,13 +444,13 @@ Insight_Extractor/
 │       ├── __init__.py         # Public exports; lazy imports for heavy classes
 │       ├── __main__.py         # CLI: python -m insight_extractor [file.txt]
 │       ├── config.py           # StemMode, KeywordCategory, PatternLabel
-│       ├── constants.py        # THREAD_SEEDS (363), REGEX_PATTERNS (15)
+│       ├── constants.py        # THREAD_SEEDS (363), REGEX_PATTERNS (17)
 │       ├── exceptions.py       # InsightExtractorError hierarchy
 │       ├── models.py           # Pydantic v2 result models
 │       ├── stemmer.py          # DynamicKeywordStemmer, KeywordPatternRegistry
 │       ├── extractor.py        # InsightExtractor orchestrator
 │       ├── tokenizer.py        # SentenceTokenizer (lazy AutoTokenizer)
-│       ├── utils.py            # Logging, hashing, timestamps
+│       ├── utils.py            # Sentence splitting, logging, hashing, timestamps
 │       └── py.typed
 └── tests/
     ├── unit/                   # Required CI, model-free (fakes injected via _model/_tokenizer)
@@ -480,54 +489,84 @@ Agents working in this repo should start at [AGENTS.md](AGENTS.md) (cross-agent 
 
 ## Example output
 
-Captured from `python -m insight_extractor src/sample_input.txt` — a ~19k-word AI-safety
-corpus sourced from the cgfixit.com RAG database. The full report is checked in as
-`src/sample_extracted_insights.md`.
-
-> This transcript used the original 69-keyword seed bank. The current default bank has
-> 363 keywords, so your counts will be higher.
+Captured on 2026-11-14 from `python -m insight_extractor src/sample_input.txt` (fresh
+scratch directory, no prior state, default 363-keyword bank, `all-MiniLM-L6-v2` on CPU,
+constraints-pinned install) — a ~19k-word AI-safety corpus sourced from the cgfixit.com
+RAG database. Long lines are trimmed with `…`; the `â€¢` sequences are mojibake for `•`
+already present in the corpus, reproduced verbatim. With the model cached, the run took
+about 23 seconds on a CPU-only Linux sandbox.
 
 ```
 === REGEX ENTITIES ===
-  DOMAIN: ['medium.com', 'fortune.com', 'techcrunch.com', 'hiddenlayer.com', ...]
+  UUID: ['dd48b8c7-f621-4be4-814a-6a2b7eec9728']
+  URL: ['https://medium.com/@sobyx/the-ais-existential-crisis-an-unexpected-journey-…', …]
+  DOMAIN: ['medium.com', 'fortune.com', 'techcrunch.com', 'tech.co', 'opentools.ai', …]
   RANSOM_AMOUNT: ['$9M', '$186', '$950M']
   FILE_EXTENSION: ['.py']
-  TELEGRAM_HANDLE: ['@sobyx']
-  YEAR: ['2025', '2026', '2024', '2023', '2020', '2019', '2015']
-  PERCENTAGE: ['4.1%', '9.6%', '13%', '68%', '800%', ...]
+  TELEGRAM_HANDLE: ['@sobyx', '@media', '@keyframes']
+  YEAR: ['2025', '2015', '2023', '2024', '2026', '2020', '2019']
+  PERCENTAGE: ['0%', '4.1%', '9.6%', '13%', '800%', '1%', '10%', '68%', '65%', '20%'] ... (+12 more)
 
 === DYNAMIC KEYWORD MATCHES ===
-  loader: ['loader', 'Loader', ...]  (31 total)
-  veeam: ['veeam', 'Veeam', ...]  (16 total)
-  RAG: ['RAG', 'rag', ...]  (9 total)
-  exploit: ['exploit', 'exploiting', ...]  (8 total)
-  supply chain: ['supply chain']  (1 total)
+  DYNAMIC_KEYWORD: ['data', 'social media', 'company', 'Score', 'hits', 'research', 'Personality', 'personality', 'frustration', 'Nihilism'] ...
 
 === SEMANTIC KEYWORD HITS (top 10) ===
-  [0.821] offline
-           ...MCP-Specific Offline Patterns — validates thread emphasis on offline MCP ...
-  [0.794] RAG
-           ...PsyClaw uses BERT embeddings with ChromaDB and BM25 hybrid retrieval via R...
-  [0.718] APT
-           ...advanced persistent threat actors leverage AI-generated phishing at scale...
-  [0.702] conti
-           ...leaked Conti 2 builder code repurposed for ESXi locker generation...
+  [0.774] confirmation bias
+           ...> â€¢ No discussion of confirmation bias or motivated reasoning...
+  [0.750] compliance
+           ...> Regulatory and Compliance Alignment:...
+  [0.618] burnout
+           ...> â€¢ Burnout and Rage-Quitting: The destructive finale mirrors human burnout re...
+  …
+  [0.535] vulnerability
+           ...> â€¢ Evaluation of security vulnerabilities and adversarial resistance...
 
 === KEY SENTENCES ===
-  [0.821] MCP-Specific Offline Patterns - Score: 1 - Stem hits: pattern
-  [0.794] This mirrors Claude's blackmail simulations: the model's chain-of-thought ...
-  [0.743] Validates thread emphasis on offline MCP with mandatory approval gates.
+  [0.774] > â€¢ No discussion of confirmation bias or motivated reasoning
+  [0.750] > Regulatory and Compliance Alignment:
+  [0.721] > â€¢ Compliance Metrics: Legal and regulatory requirement adherence, fact-checking accuracy
+  …
 
-=== DYNAMIC EXPANSION: +10 new keywords ===
-  ['alignment', 'deception', 'agentic', 'oversight', 'autonomy',
-   'chain-of-thought', 'adversarial', 'capability', 'approval', 'governance']
+=== DYNAMIC EXPANSION: +7 new keywords ===
+  ['var', 'color', 'data', 'scale', 'size', 'border', 'hits']
 
-Total tracked keywords: 79
+Total tracked keywords: 370
+
+Results saved to: insights_extracted.md
 
 === KEYWORD STATS ===
-  Categories: {'threat_intel': 28, 'osint': 12, 'ai_safety': 9, 'ai_infra': 12, 'infosec': 8, 'general': 10}
+  Categories: {'threat_intel': 19, 'general': 330, 'osint': 7, 'ai_infra': 9, 'infosec': 3, 'ai_safety': 2}
   Stem mode: stem
 ```
+
+Expansion picks the highest-TF-IDF terms of the one input document, so markup-heavy input
+(this corpus embeds CSS) adds terms such as `var` and `border`. Inspect the
+`## Newly Expanded Keywords` section before reusing a saved state file.
+
+`src/sample_extracted_insights.md` is an older report kept as a reference fixture. It
+predates the current format and the 363-keyword bank (it reports 79 tracked keywords),
+so it does not match what the CLI writes today.
+
+---
+
+## Legacy script: `docs/insight_extractor.py`
+
+A standalone, standard-library-only predecessor of the package: a Porter-like stemmer that
+keeps every line of a thread that contains a stemmed keyword. It is not imported by the
+package and is not linted or tested by CI. It reads `insight_keywords.txt` and
+`ai_thread.txt` from the **current directory** and writes `insights.md` there:
+
+```bash
+# From the repository root; runs in a sibling scratch directory so no output lands in the repo.
+mkdir ../legacy-run
+cp docs/scripts/insight_keywords.txt docs/scripts/ai_thread.txt ../legacy-run/
+cd ../legacy-run
+python ../Insight_Extractor/docs/insight_extractor.py   # adjust if your checkout is named differently
+```
+
+With the checked-in inputs it reports `147 insights from 227 lines` and writes output
+identical to `docs/scripts/ai-insights.md` (which is stored with CRLF line endings).
+Without `ai_thread.txt` it prints `✗ ai_thread.txt not found` and exits 1.
 
 ---
 
