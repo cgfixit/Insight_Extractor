@@ -31,12 +31,16 @@ _FRAME_CHARS = " \t|│┃║"
 
 
 def setup_logging(level: int = logging.INFO) -> logging.Logger:
-    """Configure and return the package logger."""
+    """Configure and return the package logger; other loggers stay at WARNING."""
+    # A root logger at INFO also enabled third-party INFO records: one CLI run logged every
+    # Hugging Face HTTP request during model loading (~13 KB of stderr).
     logging.basicConfig(
-        level=level,
+        level=logging.WARNING,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
-    return logging.getLogger("insight_extractor")
+    logger = logging.getLogger("insight_extractor")
+    logger.setLevel(level)
+    return logger
 
 
 def truncate_text(text: str, max_length: int = 120, suffix: str = "...") -> str:

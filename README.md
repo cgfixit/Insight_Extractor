@@ -5,7 +5,7 @@ call:
 
 1. **Regex entity extraction** — 17 pre-built IOC patterns (CVEs, hashes, UUIDs, URLs, IPs,
    wallets, `.onion` domains, ports, …). No model required.
-2. **Dynamic keyword matching** — a 363-term seed bank with configurable stemming
+2. **Dynamic keyword matching** — a 362-term seed bank with configurable stemming
    (exact, suffix-expansion, prefix, suffix, fuzzy, raw regex), compiled into chunked
    patterns that scale to thousands of keywords.
 3. **BERT semantic scoring** — sentence-level relevance via `sentence-transformers`
@@ -133,7 +133,9 @@ directory on the next run:
 | `insights_extracted.md` | Markdown report: regex entities, dynamic matches, semantic hits, key sentences, keyword stats |
 | `insight_extractor_state.json` | Keyword bank, frequencies, categories, stem mode, threshold, model name |
 
-Because state persists, run the CLI from a scratch directory. Console sections:
+Because state persists, run the CLI from a scratch directory. Results go to stdout; stderr
+carries this package's INFO log lines plus warnings from other libraries (their INFO
+chatter, such as per-request Hugging Face HTTP logs, is suppressed). Console sections:
 
 ```
 === REGEX ENTITIES ===
@@ -196,7 +198,7 @@ from insight_extractor import InsightExtractor, StemMode
 extractor = InsightExtractor(
     model_name="sentence-transformers/all-MiniLM-L6-v2",  # HF model ID or local path
     config_path=None,              # optional .toml / .yaml / .yml / .json (see below)
-    seed_keywords=None,            # None *or* [] both load THREAD_SEEDS (363 terms)
+    seed_keywords=None,            # None *or* [] both load THREAD_SEEDS (362 terms)
     top_k=10,                      # key sentences kept by extract() (direct calls use top_n)
     similarity_threshold=0.38,     # cosine threshold for semantic hits (0.0–1.0)
     dynamic_expansion_top_n=15,    # TF-IDF candidates considered per expansion
@@ -444,7 +446,7 @@ Insight_Extractor/
 │       ├── __init__.py         # Public exports; lazy imports for heavy classes
 │       ├── __main__.py         # CLI: python -m insight_extractor [file.txt]
 │       ├── config.py           # StemMode, KeywordCategory, PatternLabel
-│       ├── constants.py        # THREAD_SEEDS (363), REGEX_PATTERNS (17)
+│       ├── constants.py        # THREAD_SEEDS (362), REGEX_PATTERNS (17)
 │       ├── exceptions.py       # InsightExtractorError hierarchy
 │       ├── models.py           # Pydantic v2 result models
 │       ├── stemmer.py          # DynamicKeywordStemmer, KeywordPatternRegistry
@@ -490,7 +492,7 @@ Agents working in this repo should start at [AGENTS.md](AGENTS.md) (cross-agent 
 ## Example output
 
 Captured on 2026-11-14 from `python -m insight_extractor src/sample_input.txt` (fresh
-scratch directory, no prior state, default 363-keyword bank, `all-MiniLM-L6-v2` on CPU,
+scratch directory, no prior state, default 362-keyword bank, `all-MiniLM-L6-v2` on CPU,
 constraints-pinned install) — a ~19k-word AI-safety corpus sourced from the cgfixit.com
 RAG database. Long lines are trimmed with `…`; the `â€¢` sequences are mojibake for `•`
 already present in the corpus, reproduced verbatim. With the model cached, the run took
@@ -508,7 +510,7 @@ about 23 seconds on a CPU-only Linux sandbox.
   PERCENTAGE: ['0%', '4.1%', '9.6%', '13%', '800%', '1%', '10%', '68%', '65%', '20%'] ... (+12 more)
 
 === DYNAMIC KEYWORD MATCHES ===
-  DYNAMIC_KEYWORD: ['data', 'social media', 'company', 'Score', 'hits', 'research', 'Personality', 'personality', 'frustration', 'Nihilism'] ...
+  DYNAMIC_KEYWORD: ['social media', 'company', 'Score', 'hits', 'research', 'Personality', 'personality', 'frustration', 'Nihilism', 'War'] ...
 
 === SEMANTIC KEYWORD HITS (top 10) ===
   [0.774] confirmation bias
@@ -527,24 +529,30 @@ about 23 seconds on a CPU-only Linux sandbox.
   [0.721] > â€¢ Compliance Metrics: Legal and regulatory requirement adherence, fact-checking accuracy
   …
 
-=== DYNAMIC EXPANSION: +7 new keywords ===
-  ['var', 'color', 'data', 'scale', 'size', 'border', 'hits']
+=== DYNAMIC EXPANSION: +6 new keywords ===
+  ['var', 'color', 'scale', 'size', 'border', 'hits']
 
-Total tracked keywords: 370
+Total tracked keywords: 368
 
 Results saved to: insights_extracted.md
 
 === KEYWORD STATS ===
-  Categories: {'threat_intel': 19, 'general': 330, 'osint': 7, 'ai_infra': 9, 'infosec': 3, 'ai_safety': 2}
+  Categories: {'threat_intel': 18, 'general': 330, 'osint': 7, 'ai_infra': 9, 'infosec': 2, 'ai_safety': 2}
   Stem mode: stem
 ```
 
-Expansion picks the highest-TF-IDF terms of the one input document, so markup-heavy input
-(this corpus embeds CSS) adds terms such as `var` and `border`. Inspect the
-`## Newly Expanded Keywords` section before reusing a saved state file.
+Expansion ranks the terms of the one input document by TF-IDF, keeps the top
+`dynamic_expansion_top_n`, and then skips candidates that add nothing to the bank:
+phrases that repeat a word (`mycorrhizal mycorrhizal`), contain an existing keyword
+(`leaked conti`), or nest inside another candidate phrase; bare words of an existing
+phrase (`data` next to `data breach`); and anything containing `use`/`used`/`uses`/
+`using`/`vs`. Skipped candidates are not backfilled. Generic words outside the bank can
+still get in, and markup-heavy input (this corpus embeds minified CSS) still adds terms
+such as `var` and `border`, so inspect `## Newly Expanded Keywords` before reusing a
+saved state file.
 
 `src/sample_extracted_insights.md` is an older report kept as a reference fixture. It
-predates the current format and the 363-keyword bank (it reports 79 tracked keywords),
+predates the current format and the 362-keyword bank (it reports 79 tracked keywords),
 so it does not match what the CLI writes today.
 
 ---

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import subprocess
+import sys
 from datetime import UTC, datetime
 
 from insight_extractor.utils import (
@@ -11,6 +13,25 @@ from insight_extractor.utils import (
     split_sentences,
     truncate_text,
 )
+
+
+def test_setup_logging_keeps_third_party_info_quiet() -> None:
+    # Fresh interpreter: pytest owns the root logger's handlers in this process.
+    probe = (
+        "import logging\n"
+        "from insight_extractor.utils import setup_logging\n"
+        "setup_logging()\n"
+        "logging.getLogger('httpx').info('third-party-info')\n"
+        "logging.getLogger('httpx').warning('third-party-warning')\n"
+        "logging.getLogger('insight_extractor').info('package-info')\n"
+        "logging.getLogger('insight_extractor.stemmer').info('module-info')\n"
+    )
+    stderr = subprocess.run(
+        [sys.executable, "-c", probe], capture_output=True, text=True, check=True
+    ).stderr
+
+    assert "third-party-info" not in stderr
+    assert all(m in stderr for m in ("third-party-warning", "package-info", "module-info"))
 
 
 class TestTruncateText:

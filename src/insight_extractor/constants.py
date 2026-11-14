@@ -352,7 +352,6 @@ THREAD_SEEDS: KeywordList = [
     "relief",
     "despair",
     "indifference",
-    "vulnerability",
     "emotional resilience",
     "emotional intelligence",
     "sense of belonging",
