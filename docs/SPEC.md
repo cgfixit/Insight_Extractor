@@ -355,6 +355,19 @@ class InsightExtractor:
     def extract(self, text: str, *, update_keywords: bool = True) -> ExtractResult:
         ...  # returns Pydantic ExtractResult
 
+    def update_thread_keywords(self, new_text: str, *, auto_expand: bool = True) -> list[str]:
+        """
+        Rank new_text's terms by TF-IDF, keep the top dynamic_expansion_top_n, drop
+        candidates redundant with the bank, then add each candidate whose best cosine
+        similarity to any bank keyword is >= similarity_threshold. If none qualifies,
+        add the single top-ranked unseen candidate.
+
+        The gate measures relatedness to the bank, not term quality: with the default
+        multi-domain seeds, generic words clear 0.38 more easily than new domain terms.
+        This is accepted behaviour (issue #53; measurements in the README).
+        """
+        ...
+
     def save_results_to_markdown(self, result: ExtractResult, filename: str = "insights_extracted.md") -> Path:
         """Write extraction results to a Markdown file in the output directory."""
         ...
