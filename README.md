@@ -551,6 +551,31 @@ still get in, and markup-heavy input (this corpus embeds minified CSS) still add
 such as `var` and `border`, so inspect `## Newly Expanded Keywords` before reusing a
 saved state file.
 
+**The expansion gate is a relatedness check, not a quality filter.** A candidate is added
+when its best cosine similarity to *any* keyword in the bank is at least
+`similarity_threshold` (0.38); if no candidate clears it, the single top-ranked unseen
+candidate is added instead. With the 362 multi-domain default seeds, common words find a
+neighbour easily while new domain terms often do not. Measured with `all-MiniLM-L6-v2` and
+the default seeds (2026-11-20):
+
+| Candidate | Best match in bank | Max similarity | Mean of top 3 | Passes gate |
+|---|---|---|---|---|
+| `group` | `groupthink` | 0.699 | 0.650 | yes |
+| `starter` | `startup` | 0.628 | 0.455 | yes |
+| `hits` | `strike` | 0.575 | 0.503 | yes |
+| `border` | `immigration` | 0.570 | 0.442 | yes |
+| `pipelines` | `supply chain` | 0.380 | 0.369 | yes |
+| `unpatched` | `patch` | 0.373 | 0.360 | no |
+| `webshell` | `internet culture` | 0.334 | 0.321 | no |
+| `mycorrhizal` | `nitrogen` | 0.333 | 0.315 | no |
+
+Raising the threshold, or averaging the top three neighbours, drops the new domain terms
+before it drops the generic ones, so the gate is left as it is (issue #53) and the candidate
+filters above carry the quality. Growth stays bounded: the first run on a text added 2 to 6
+keywords on four test inputs (this corpus, the CI smoke text, the built-in sample, and a
+threat report), and repeat runs on the same text added none. Pass a focused `seed_keywords`
+list, or `update_keywords=False` to `extract()`, when you need a tighter bank.
+
 `src/sample_extracted_insights.md` is an older report kept as a reference fixture. It
 predates the current format and the 362-keyword bank (it reports 79 tracked keywords),
 so it does not match what the CLI writes today.
