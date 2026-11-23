@@ -27,6 +27,9 @@ _NO_BREAK_AFTER = re.compile(
 )
 # "U.S."/"U.K." often end a sentence, so they join only a lowercase continuation.
 _COUNTRY_ABBREVIATION = re.compile(r"(?<![\w.])U\.[SK]\.$")
+# Covers the longest abbreviation ("approx." plus its one-char lookbehind) and short
+# marked ordinals such as "> - 123."; a longer all-marker piece no longer joins.
+_BREAK_CHECK_TAIL = 16
 _FRAME_CHARS = " \t|│┃║"
 
 
@@ -86,9 +89,13 @@ def split_sentences(text: str) -> list[str]:
         if paragraph:
             pieces: list[str] = []
             for piece in _SENTENCE_END.split(" ".join(paragraph)):
+                # Both patterns end in $ and the ^-anchored ordinal branch only fits short
+                # pieces, so the tail decides. Rescanning every joined piece made 50 KB of
+                # "e.g. " take 13 s (quadratic).
+                tail = max(0, len(pieces[-1]) - _BREAK_CHECK_TAIL) if pieces else 0
                 if pieces and (
-                    _NO_BREAK_AFTER.search(pieces[-1])
-                    or (_COUNTRY_ABBREVIATION.search(pieces[-1]) and piece[:1].islower())
+                    _NO_BREAK_AFTER.search(pieces[-1], tail)
+                    or (_COUNTRY_ABBREVIATION.search(pieces[-1], tail) and piece[:1].islower())
                 ):
                     pieces[-1] = f"{pieces[-1]} {piece}"
                 elif piece:

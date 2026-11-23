@@ -708,6 +708,17 @@ def test_keyword_expansion_ignores_urls_numbers_and_hashes(tmp_path: Path) -> No
     assert "9a2f15b7" not in tokens and "3b4c5d6e7f8a9b0c1d2e3f4a" not in tokens
 
 
+def test_port_pattern_is_linear_on_long_whitespace_runs(tmp_path: Path) -> None:
+    extractor = InsightExtractor(seed_keywords=["ransomware"], output_dir=tmp_path)
+    text = "open port" + "\n" * 50000 + " ; port\t=\t445"
+    started = time.perf_counter()
+    result = extractor.extract_regex_entities(text)
+
+    # Generous budget: possessive whitespace takes ~0.01 s here, adjacent \s* ~14 s.
+    assert time.perf_counter() - started < 3.0
+    assert result["PORT_NUMBER"] == ["445"]
+
+
 def test_keyword_noise_stripping_is_linear_on_dotted_runs() -> None:
     started = time.perf_counter()
     _TFIDF_NOISE.sub(" ", "a1-" * 20000 + "a." * 20000)
