@@ -799,6 +799,22 @@ def test_semantic_methods_encode_keywords_lazily_on_a_fresh_extractor(tmp_path: 
     assert extractor.extract_key_sentences(text)
 
 
+def test_extract_counts_keyword_matches_into_frequencies(tmp_path: Path) -> None:
+    extractor = InsightExtractor(
+        seed_keywords=["exploit", "ransomware", "botnet"], output_dir=tmp_path
+    )
+    extractor._model = FakeModel()
+    extractor._tokenizer = FakeTokenizer()
+    text = "Ransomware crews reuse ransomwares. One exploit, then RANSOMWARE again."
+
+    for _ in range(2):
+        result = extractor.extract(text, update_keywords=False)
+
+    # 1 for joining the bank, plus 3 ransomware and 1 exploit matches per run.
+    assert extractor.keyword_freq == {"ransomware": 7, "exploit": 3, "botnet": 1}
+    assert result.keyword_stats.top_keywords == [("ransomware", 7), ("exploit", 3), ("botnet", 1)]
+
+
 def test_semantic_methods_work_after_expanding_an_empty_bank(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -1027,6 +1027,12 @@ class InsightExtractor:
         # Run all extractors
         regex_entities = self.extract_regex_entities(text)
         dynamic_keyword_matches = self.extract_dynamic_entities(text)
+        # A keyword's frequency is 1 when it joins the bank plus every match in every
+        # extract(). Nothing counted matches before, so "Top Keywords" was list order.
+        bank = set(self.thread_keywords)
+        self.keyword_freq.update(
+            match.keyword for match in self.stemmer.find_matches(text) if match.keyword in bank
+        )
         self._unit_embeddings = {}
         try:
             semantic_keywords = self.extract_semantic_keywords(text)
