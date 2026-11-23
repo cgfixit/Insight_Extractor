@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import time
 from datetime import UTC, datetime
 
 from insight_extractor.utils import (
@@ -251,3 +252,12 @@ class TestSplitSentences:
             "Most victims were in the U.S.",
             "The group later expanded via St. Louis.",
         ]
+
+    def test_long_abbreviation_runs_split_in_linear_time(self) -> None:
+        text = "e.g. " * 10000 + "vs. " * 5000 + "U.S. and " * 5000
+        started = time.perf_counter()
+        units = split_sentences(text)
+
+        # Generous budget: tail-only checks take ~0.05 s here, whole-piece rescans ~60 s.
+        assert time.perf_counter() - started < 3.0
+        assert units == [" ".join(text.split())]

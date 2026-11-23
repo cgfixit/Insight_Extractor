@@ -64,8 +64,8 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
 
-      - name: Install package + dev deps
-        run: pip install -e ".[dev]"
+      - name: Install package + dev deps (pinned runtime deps)
+        run: pip install -e ".[dev]" -c constraints.txt
 
       - name: mypy strict
         run: mypy src/insight_extractor
@@ -90,8 +90,11 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Install package + dev deps
-        run: pip install -e ".[dev]"
+      # Users install with -c constraints.txt, so the required gates test those pins. An
+      # unconstrained install once hid transformers 4.53.0 + accelerate 0.34.2 failing to
+      # import together. Smoke and integration stay unconstrained to catch upstream drift.
+      - name: Install package + dev deps (pinned runtime deps)
+        run: pip install -e ".[dev]" -c constraints.txt
 
       - name: Run unit tests
         run: |

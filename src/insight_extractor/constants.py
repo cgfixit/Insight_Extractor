@@ -421,7 +421,9 @@ REGEX_PATTERNS: RegexPatternDict = {
     PatternLabel.FILE_EXTENSION: r"\.\b(?:exe|dll|ps1|bat|sh|py|bin|enc|locked)\b",
     PatternLabel.DARK_WEB: r"\b\w+\.onion\b",
     PatternLabel.TELEGRAM_HANDLE: r"@[A-Za-z0-9_]{5,}",
-    PatternLabel.PORT_NUMBER: r"\bports?\s*[:=#]?\s*(\d{2,5})\b",
+    # Possessive \s*+: two adjacent \s* retried every split of a whitespace run, so "port"
+    # followed by 50,000 newlines took 14 s (quadratic). The next token is never whitespace.
+    PatternLabel.PORT_NUMBER: r"\bports?\s*+[:=#]?\s*+(\d{2,5})\b",
     PatternLabel.TB_GB_DATA: r"\b\d+(?:\.\d+)?\s?(?:TB|GB|MB|terabytes?|gigabytes?)\b",
     PatternLabel.YEAR: r"\b20[12]\d\b",
     PatternLabel.PERCENTAGE: r"\b\d+(?:\.\d+)?%",

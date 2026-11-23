@@ -95,8 +95,9 @@ Install with `-c constraints.txt` — the pins encode a tested
 python -m pip install -e ".[dev]" -c constraints.txt
 ```
 
-CI's lint/type/unit jobs install `.[dev]` **without** the constraints file; keep it for a
-fully pinned local setup.
+CI's type-check and unit-test jobs (Python 3.12 and 3.13) install with the same
+`-c constraints.txt`, so the required gates test the pins users get. The smoke and
+integration jobs install unconstrained on purpose, to catch new upstream releases early.
 
 ### Known issues
 
@@ -211,8 +212,11 @@ extractor = InsightExtractor(
 ```
 
 A config file may set `seed_keywords`, `similarity_threshold`, and `stem_mode`; these
-override the constructor arguments. A missing file is ignored and an unparseable one logs
-a warning and falls back to defaults:
+override the constructor arguments. A missing file is ignored. An unparseable file, or one
+with an invalid value (`seed_keywords` that is not a list of strings, a non-numeric or
+non-finite `similarity_threshold`, an unknown `stem_mode`), logs a warning naming the
+problem and keeps the constructor values; nothing from that file is applied. Unlike the
+constructor, `seed_keywords = []` in a file means an empty bank:
 
 ```toml
 # extractor.toml
@@ -232,6 +236,10 @@ stem_mode = "prefix"
 | `FUZZY` | Any word containing the keyword |
 | `REGEX` | Keyword is a raw regex, passed through unescaped — the caller owns validity |
 
+When two keywords match at the same position, the longer one wins, whatever the bank
+order: `trade deadline` is reported as itself, not as `trade`. `REGEX` keywords are raw
+alternatives and keep the order given.
+
 Keywords that start or end with a non-word character (`C++`, `.NET`) compile but never match
 in `EXACT`/`STEM` because `\b` needs a word/non-word transition; use `REGEX` for those.
 Interior punctuation is fine (`zero-day` matches normally).
@@ -242,7 +250,9 @@ Interior punctuation is fine (`zero-day` matches normally).
 only the `DYNAMIC_KEYWORD` label, or an empty dict when no keyword matches.
 Static labels appear in `regex_entities`. Disabling dynamic regex returns empty
 dynamic results while leaving static extraction available.
-`KeywordPatternRegistry.extract_all()` retains its combined static + dynamic contract.
+`KeywordPatternRegistry.extract_all()` retains its combined static + dynamic contract;
+`extract_dynamic_entities()` calls `KeywordPatternRegistry.extract_dynamic()`, so the
+static patterns run once per `extract()`.
 
 ```python
 # Full pipeline: regex + dynamic + semantic + key sentences + keyword expansion
@@ -265,11 +275,18 @@ new_keywords = extractor.update_thread_keywords(text, auto_expand=True)  # -> li
 stats = extractor.get_keyword_stats()                    # -> KeywordStats
 top = extractor.top_keywords(n=20)                       # -> list[tuple[str, int]]
 md_path = extractor.save_results_to_markdown(result, filename="insights_extracted.md")
-# A relative Path resolves from the CWD, not output_dir, so build it from output_dir:
+# A relative Path resolves from the CWD, not output_dir, so build it from output_dir.
+# (A str path still resolves inside output_dir but is deprecated and warns.)
 state_path = extractor.output_dir / "insight_extractor_state.json"
 extractor.save_state(state_path)            # -> None
 loaded = extractor.load_state(state_path)   # -> bool
 ```
+
+Keyword frequencies (`keyword_freq`, `top_keywords()`, `KeywordStats.top_keywords`, the
+report's **Top Keywords** line and the state file) start at 1 when a keyword joins the
+bank and go up by one for every match of that keyword in each `extract()` call, stemmed
+forms included (`ransomwares` counts for `ransomware`). They carry across runs through the
+state file. Direct calls such as `extract_dynamic_entities()` do not count.
 
 `load_state()` returns `False` for a missing file. It validates the full JSON
 object and prepares keyword patterns before applying any state. Malformed JSON,
@@ -354,11 +371,10 @@ for m in stemmer.find_matches("ALPHV ransomware exploited CVE-2024-1234 via late
 |--------|-----------|-------------|
 | Constructor | `DynamicKeywordStemmer(*, stem_mode, case_sensitive, custom_suffixes, max_pattern_length)` | Keyword-only constructor |
 | `generate_pattern` | `(keyword, mode=None) -> str` | Regex pattern for one keyword |
-| `generate_stem_variations` | `(keyword) -> list[str]` | Keyword plus lowercase `keyword + suffix` per configured suffix; a keyword already ending in a known suffix is not expanded. Not used by matching |
-| `compile_keywords` | `(keywords) -> KeywordPattern` | One logical pattern, chunked internally for large banks |
-| `compile_keywords_incremental` | `(keywords) -> KeywordPattern` | Recompile only the appended tail when the bank grows |
+| `compile_keywords` | `(keywords) -> KeywordPattern` | One logical pattern, longest keyword first (caller order in `REGEX` mode), chunked internally for large banks |
+| `compile_keywords_incremental` | `(keywords) -> KeywordPattern` | Alias of `compile_keywords`, kept for compatibility; the bank is always compiled in one go |
 | `compile_typed_patterns` | `(keywords) -> dict[str, KeywordPattern]` | One pattern per heuristic bucket: `technical_terms`, `proper_nouns`, `general_terms` (empty buckets omitted) |
-| `find_matches` | `(text) -> list[MatchInfo]` | All keyword matches with positions (`.match .keyword .start .end .stemmed`) |
+| `find_matches` | `(text) -> list[MatchInfo]` | All keyword matches with positions (`.match .keyword .start .end .stemmed`); a stemmed match is credited to its own root (`awards` -> `award`, not an earlier `war`) |
 | `add_keyword` / `remove_keyword` | `(keyword)` | Mutate the bank and invalidate caches |
 | `set_keywords` | `(keywords)` | Replace the full keyword set |
 | `compiled_pattern` | property `-> KeywordPattern \| None` | Lazily compiled master pattern |
@@ -370,7 +386,8 @@ for m in stemmer.find_matches("ALPHV ransomware exploited CVE-2024-1234 via late
 | Constructor | `KeywordPatternRegistry(*, static_patterns=None, stemmer=None)` | Combine static regexes with a stemmer |
 | `all_patterns` | property `-> dict[str, str]` | Static + dynamic patterns |
 | `regenerate_dynamic_patterns` | `(keywords)` | Rebuild dynamic patterns — call after any keyword change |
-| `extract_all` | `(text) -> dict[str, list[str]]` | All pattern matches from text |
+| `extract_all` | `(text) -> dict[str, list[str]]` | All pattern matches from text: static labels plus `extract_dynamic()` |
+| `extract_dynamic` | `(text) -> dict[str, list[str]]` | Only `DYNAMIC_KEYWORD` matches, whitespace collapsed, first-seen order; `{}` when nothing matches |
 
 ### `SentenceTokenizer`
 
@@ -554,7 +571,8 @@ saved state file.
 **The expansion gate is a relatedness check, not a quality filter.** A candidate is added
 when its best cosine similarity to *any* keyword in the bank is at least
 `similarity_threshold` (0.38); if no candidate clears it, the single top-ranked unseen
-candidate is added instead. With the 362 multi-domain default seeds, common words find a
+candidate is added instead. That fallback is skipped when a bank keyword or phrase is
+itself among the top candidates, because the text is then treated as in-domain. With the 362 multi-domain default seeds, common words find a
 neighbour easily while new domain terms often do not. Measured with `all-MiniLM-L6-v2` and
 the default seeds (2026-11-20):
 

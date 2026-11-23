@@ -7,6 +7,7 @@ import re
 import pytest
 
 from insight_extractor.config import StemMode
+from insight_extractor.constants import THREAD_SEEDS
 from insight_extractor.stemmer import (
     ChunkedKeywordPattern,
     DynamicKeywordStemmer,
@@ -92,15 +93,6 @@ class TestGeneratePattern:
         raw = r"CVE-\d{4}-\d{5,}"
         pat = stemmer.generate_pattern(raw, StemMode.REGEX)
         assert pat == raw
-
-
-class TestGenerateStemVariations:
-    """Stem variation generation."""
-
-    def test_generate_stem_variations(self, stemmer: DynamicKeywordStemmer) -> None:
-        vars_ = stemmer.generate_stem_variations("attack")
-        assert "attack" in vars_
-        assert len(vars_) > 1
 
 
 class TestCompileKeywords:
@@ -223,6 +215,29 @@ class TestAddRemoveKeyword:
         stemmer.add_keyword("new")
         # Cache was invalidated — accessing compiled_pattern rebuilds it
         assert stemmer.compiled_pattern is not old_pat
+
+
+class TestLongestKeywordWins:
+    """A keyword listed after its own prefix still matches."""
+
+    def test_phrase_beats_its_first_word(self, stemmer: DynamicKeywordStemmer) -> None:
+        stemmer.set_keywords(["trade", "trade deadline", "music"])
+        matches = stemmer.find_matches("Before the trade deadline, music and trades.")
+        assert [(m.match, m.keyword) for m in matches] == [
+            ("trade deadline", "trade deadline"),
+            ("music", "music"),
+            ("trades", "trade"),
+        ]
+
+    def test_every_default_seed_matches_itself(self) -> None:
+        stemmer = DynamicKeywordStemmer()
+        stemmer.set_keywords(THREAD_SEEDS)
+        dead = [
+            kw
+            for kw in THREAD_SEEDS
+            if (2, 2 + len(kw)) not in {(m.start, m.end) for m in stemmer.find_matches(f"x {kw} x")}
+        ]
+        assert dead == []
 
 
 class TestFindMatches:
@@ -348,6 +363,20 @@ class TestMultiWordWhitespace:
         text = "\n".join(kw.replace(" ", "\t", 1) for kw in kws)
         assert {m.keyword for m in stemmer.find_matches(text)} == set(kws)
 
+    def test_extract_dynamic_skips_static_patterns(self) -> None:
+        registry = KeywordPatternRegistry(
+            static_patterns={"CVE_ID": r"CVE-\d{4}-\d+"}, stemmer=DynamicKeywordStemmer()
+        )
+        registry.regenerate_dynamic_patterns(["ransomware"])
+        text = "Ransomware abused CVE-2026-1234; ransomware again."
+
+        assert registry.extract_dynamic(text) == {"DYNAMIC_KEYWORD": ["Ransomware", "ransomware"]}
+        assert registry.extract_all(text) == {
+            "CVE_ID": ["CVE-2026-1234"],
+            "DYNAMIC_KEYWORD": ["Ransomware", "ransomware"],
+        }
+        assert KeywordPatternRegistry(stemmer=DynamicKeywordStemmer()).extract_dynamic(text) == {}
+
     def test_extract_all_reports_wrapped_match_once_with_single_spaces(
         self, registry_with_stemmer: KeywordPatternRegistry
     ) -> None:
@@ -357,7 +386,7 @@ class TestMultiWordWhitespace:
 
 
 class TestCompileKeywordsIncremental:
-    """Incremental (append-only) compilation matches full-rebuild behavior."""
+    """compile_keywords_incremental is kept as an alias of the full compile."""
 
     def test_first_call_matches_full_compile(self, stemmer: DynamicKeywordStemmer) -> None:
         kws = ["ransomware", "CVE", "exploit"]
@@ -365,27 +394,17 @@ class TestCompileKeywordsIncremental:
         for kw in kws:
             assert incremental.search(kw), f"failed to match {kw}"
 
-    def test_append_only_reuses_chunks_and_still_matches_all(
-        self, stemmer: DynamicKeywordStemmer
-    ) -> None:
-        first = ["ransomware", "CVE"]
-        stemmer.compile_keywords_incremental(first)
-        old_chunks = list(stemmer._compiled_chunks)
+    def test_grown_bank_matches_like_a_fresh_compile(self) -> None:
+        text = "The ransomwares gang struck."
+        grown = KeywordPatternRegistry(stemmer=DynamicKeywordStemmer())
+        grown.regenerate_dynamic_patterns(["ransomware"])
+        grown.regenerate_dynamic_patterns(["ransomware", "ransomwares gang"])
+        fresh = KeywordPatternRegistry(stemmer=DynamicKeywordStemmer())
+        fresh.regenerate_dynamic_patterns(["ransomware", "ransomwares gang"])
 
-        grown = [*first, "exploit", "phishing"]
-        pattern = stemmer.compile_keywords_incremental(grown)
-
-        # Original compiled chunks are reused, not recompiled
-        assert stemmer._compiled_chunks[: len(old_chunks)] == old_chunks
-        for kw in grown:
-            assert pattern.search(kw), f"failed to match {kw}"
-
-    def test_no_op_call_reuses_cache(self, stemmer: DynamicKeywordStemmer) -> None:
-        kws = ["ransomware", "CVE"]
-        stemmer.compile_keywords_incremental(kws)
-        chunks_before = stemmer._compiled_chunks
-        stemmer.compile_keywords_incremental(list(kws))
-        assert stemmer._compiled_chunks is chunks_before
+        assert grown.extract_all(text) == fresh.extract_all(text)
+        assert grown.extract_all(text) == {"DYNAMIC_KEYWORD": ["ransomwares gang"]}
+        assert isinstance(grown._compiled_dynamic, re.Pattern)
 
     def test_removal_falls_back_to_full_rebuild(self, stemmer: DynamicKeywordStemmer) -> None:
         stemmer.compile_keywords_incremental(["ransomware", "phishing"])
@@ -438,6 +457,25 @@ class TestResolveSourceKeywordLookup:
     def test_substring_fallback_still_works(self, stemmer: DynamicKeywordStemmer) -> None:
         stemmer.set_keywords(["Ransomware"])
         assert stemmer._resolve_source_keyword("ransomwares") == "Ransomware"
+
+    def test_stem_match_credits_its_own_root(self, stemmer: DynamicKeywordStemmer) -> None:
+        stemmer.set_keywords(["war", "award", "game", "video game", "box"])
+        matches = stemmer.find_matches("Two awards, video games and boxes.")
+        assert [(m.match, m.keyword) for m in matches] == [
+            ("awards", "award"),
+            ("video games", "video game"),
+            ("boxes", "box"),
+        ]
+
+    def test_every_default_seed_resolves_its_plural_to_itself(self) -> None:
+        stemmer = DynamicKeywordStemmer()
+        stemmer.set_keywords(THREAD_SEEDS)
+        wrong = {
+            kw: stemmer._resolve_source_keyword(f"{kw}s")
+            for kw in THREAD_SEEDS
+            if stemmer._resolve_source_keyword(f"{kw}s") not in (kw, f"{kw}s")
+        }
+        assert wrong == {}
 
 
 class TestRepr:

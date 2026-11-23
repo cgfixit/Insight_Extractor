@@ -5,14 +5,10 @@ import re
 from collections import defaultdict
 from collections.abc import Iterator
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
 
 from insight_extractor.config import PatternLabel, StemMode
 from insight_extractor.exceptions import PatternCompileError
 from insight_extractor.models import MatchInfo
-
-if TYPE_CHECKING:
-    pass
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -100,19 +96,16 @@ class DynamicKeywordStemmer:
 
         # Precomputed once -- custom_suffixes is immutable after construction
         self._suffix_group: str = "|".join(re.escape(s) for s in self.custom_suffixes)
+        # Shortest suffix first = longest root first, mirroring longest-keyword-first matching.
+        self._suffixes_shortest_first: tuple[str, ...] = tuple(
+            sorted(self.custom_suffixes, key=len)
+        )
 
         # Internal caches -- invalidated on keyword changes
         self._keywords: KeywordList = []
         self._compiled_master: KeywordPattern | None = None
-        self._compiled_typed: TypedPatternDict | None = None
         self._keyword_lookup: dict[str, str] | None = None
         self._last_updated: datetime | None = None
-
-        # Incremental-compilation cache -- tracks the keyword list and chunk
-        # patterns behind the last compiled_master, so appending keywords only
-        # compiles the new tail instead of rebuilding every regex from scratch.
-        self._compiled_snapshot: KeywordList = []
-        self._compiled_chunks: list[re.Pattern[str]] = []
 
     # -- Representation -------------------------------------------------------
 
@@ -171,51 +164,6 @@ class DynamicKeywordStemmer:
                 # Fallback for unexpected mode values
                 return rf"\b{escaped}\b"
 
-    def generate_stem_variations(self, keyword: str) -> KeywordList:
-        """Generate stemmed variations of a keyword for broader matching.
-
-        Detects the root by stripping known suffixes, then expands with all
-        configured suffixes.
-
-        Parameters
-        ----------
-        keyword:
-            Source keyword.
-
-        Returns
-        -------
-        list[str]
-            List of variations (always includes the original keyword).
-
-        Examples
-        --------
-        >>> stemmer = DynamicKeywordStemmer()
-        >>> stemmer.generate_stem_variations("ransomware")
-        ['ransomware', 'ransomwares']
-        """
-        variations = [keyword]
-        keyword_lower = keyword.lower()
-
-        # Strip trailing suffixes to find the root
-        root = keyword_lower
-        stripped = False
-        for suffix in sorted(self.custom_suffixes, key=len, reverse=True):
-            if root.endswith(suffix) and len(root) > len(suffix) + 2:
-                root = root[: -len(suffix)]
-                stripped = True
-                break
-
-        if stripped:
-            variations.append(keyword_lower)
-        else:
-            # Add suffixed variations
-            for suffix in self.custom_suffixes:
-                candidate = keyword_lower + suffix
-                if candidate not in variations:
-                    variations.append(candidate)
-
-        return variations
-
     # -- Compilation ----------------------------------------------------------
 
     def compile_keywords(self, keywords: list[str]) -> KeywordPattern:
@@ -245,6 +193,11 @@ class DynamicKeywordStemmer:
         # quadratic in the bank (48.6 s of a 62.7 s run on a 19k-word input). Only
         # group(0) is ever read.
         patterns: list[str] = []
+        # At one position the first fitting alternative wins, so a keyword listed after its
+        # own prefix never matched ("music industry" came back as "music"). REGEX-mode
+        # keywords are raw alternatives whose order the caller owns.
+        if self.stem_mode is not StemMode.REGEX:
+            keywords = sorted(keywords, key=len, reverse=True)
         for kw in keywords:
             pat = self.generate_pattern(kw)
             patterns.append(f"(?:{pat})")
@@ -271,14 +224,12 @@ class DynamicKeywordStemmer:
             raise PatternCompileError(f"Failed to compile combined pattern: {exc}") from exc
 
     def compile_keywords_incremental(self, keywords: list[str]) -> KeywordPattern:
-        """Compile *keywords*, reusing previously compiled chunks when possible.
+        """Compile *keywords*; kept for compatibility, identical to :meth:`compile_keywords`.
 
-        When *keywords* is exactly the previously compiled list plus new
-        keywords appended at the end (the common case as a keyword bank grows
-        run over run), only the new tail is compiled; the existing chunks are
-        kept as-is and combined with the new chunk(s). Any other change
-        (removal, reordering, first-time compilation) falls back to a full
-        :meth:`compile_keywords` rebuild.
+        It used to compile only an appended tail as an extra chunk. Overlapping
+        chunks then reported matches a fresh compile did not, and every update
+        added a chunk that rescanned the text. A full compile of ~500 keywords
+        takes ~30 ms, so the bank is always compiled in one go.
 
         Parameters
         ----------
@@ -288,35 +239,9 @@ class DynamicKeywordStemmer:
         Returns
         -------
         KeywordPattern
-            Compiled regex or chunked adapter matching any keyword variation --
-            identical in matching behavior to :meth:`compile_keywords`.
+            Same result as :meth:`compile_keywords`.
         """
-        if not keywords:
-            self._compiled_snapshot = []
-            self._compiled_chunks = []
-            return re.compile(r"(?!)")
-
-        snapshot = self._compiled_snapshot
-        if snapshot and len(keywords) > len(snapshot) and keywords[: len(snapshot)] == snapshot:
-            new_pattern = self.compile_keywords(keywords[len(snapshot) :])
-            chunks = [*self._compiled_chunks, *self._as_chunks(new_pattern)]
-        elif snapshot == keywords:
-            chunks = self._compiled_chunks
-        else:
-            chunks = self._as_chunks(self.compile_keywords(keywords))
-
-        self._compiled_snapshot = list(keywords)
-        self._compiled_chunks = chunks
-        if len(chunks) == 1:
-            return chunks[0]
-        return ChunkedKeywordPattern(chunks)
-
-    @staticmethod
-    def _as_chunks(pattern: KeywordPattern) -> list[re.Pattern[str]]:
-        """Flatten a compiled pattern into its underlying regex chunk(s)."""
-        if isinstance(pattern, ChunkedKeywordPattern):
-            return pattern.patterns
-        return [pattern]
+        return self.compile_keywords(keywords)
 
     def compile_typed_patterns(self, keywords: list[str]) -> TypedPatternDict:
         """Compile keywords into categorized patterns by type heuristic.
@@ -406,7 +331,6 @@ class DynamicKeywordStemmer:
     def _invalidate_caches(self) -> None:
         """Clear compiled pattern caches after keyword mutations."""
         self._compiled_master = None
-        self._compiled_typed = None
         self._keyword_lookup = None
         self._last_updated = datetime.now(UTC)
 
@@ -416,7 +340,7 @@ class DynamicKeywordStemmer:
     def compiled_pattern(self) -> KeywordPattern | None:
         """Lazily compiled master pattern -- rebuilt on cache miss."""
         if self._compiled_master is None and self._keywords:
-            self._compiled_master = self.compile_keywords_incremental(self._keywords)
+            self._compiled_master = self.compile_keywords(self._keywords)
         return self._compiled_master
 
     # -- Matching -------------------------------------------------------------
@@ -487,10 +411,11 @@ class DynamicKeywordStemmer:
     def _resolve_source_keyword(self, matched_text: str) -> str | None:
         """Map matched text back to its originating keyword.
 
-        First tries exact case-insensitive match, then falls back to
-        substring containment in either direction. Whitespace runs in
-        *matched_text* are collapsed to one space first, since multi-word
-        keywords match across newlines, tabs and repeated spaces.
+        Tries an exact case-insensitive match, then the match minus one
+        configured suffix (shortest suffix first), then substring containment
+        in either direction. Whitespace runs in *matched_text* are collapsed to
+        one space first, since multi-word keywords match across newlines, tabs
+        and repeated spaces.
 
         Parameters
         ----------
@@ -505,12 +430,21 @@ class DynamicKeywordStemmer:
         matched_lower = _normalize_whitespace(matched_text).lower()
 
         # Exact match -- O(1) via lazily-built lookup instead of a linear scan
-        exact = self._get_keyword_lookup().get(matched_lower)
+        lookup = self._get_keyword_lookup()
+        exact = lookup.get(matched_lower)
         if exact is not None:
             return exact
 
+        # A STEM match is root + suffix. Substring search alone credited "awards" to an
+        # earlier "war" and "video games" to "game".
+        for suffix in self._suffixes_shortest_first:
+            if suffix and matched_lower.endswith(suffix):
+                stemmed = lookup.get(matched_lower[: -len(suffix)])
+                if stemmed is not None:
+                    return stemmed
+
         # Fuzzy fallback: reuse the ordered lowercase lookup to avoid re-lowering each keyword.
-        for kw_lower, kw in self._get_keyword_lookup().items():
+        for kw_lower, kw in lookup.items():
             if kw_lower in matched_lower or matched_lower in kw_lower:
                 return kw
 
@@ -588,7 +522,7 @@ class KeywordPatternRegistry:
         self.stemmer.set_keywords(keywords)
 
         if keywords:
-            compiled_dynamic = self.stemmer.compile_keywords_incremental(keywords)
+            compiled_dynamic = self.stemmer.compile_keywords(keywords)
             master_pattern = compiled_dynamic.pattern
             self._dynamic_patterns = {
                 PatternLabel.DYNAMIC_KEYWORD: master_pattern,
@@ -640,13 +574,29 @@ class KeywordPatternRegistry:
                         results[label].append(m_str)
                         seen.add(m_str)
 
-        # Dynamic keyword patterns
-        if self._compiled_dynamic is not None:
-            seen_dynamic: set[str] = set()
-            for match in self._compiled_dynamic.finditer(text):
-                m_str = _normalize_whitespace(match.group(0))
-                if m_str not in seen_dynamic:
-                    results[PatternLabel.DYNAMIC_KEYWORD].append(m_str)
-                    seen_dynamic.add(m_str)
-
+        results.update(self.extract_dynamic(text))
         return dict(results)
+
+    def extract_dynamic(self, text: str) -> EntityResults:
+        """Run only the dynamic keyword pattern.
+
+        Whitespace runs are collapsed to one space before deduplication, so a
+        keyword wrapped across lines is reported once, as it reads in prose.
+
+        Parameters
+        ----------
+        text:
+            Input text to search.
+
+        Returns
+        -------
+        dict[str, list[str]]
+            ``{"DYNAMIC_KEYWORD": [...]}`` in first-seen order, or ``{}`` when
+            nothing matched or no dynamic pattern is compiled.
+        """
+        if self._compiled_dynamic is None:
+            return {}
+        found = dict.fromkeys(
+            _normalize_whitespace(match.group(0)) for match in self._compiled_dynamic.finditer(text)
+        )
+        return {PatternLabel.DYNAMIC_KEYWORD: list(found)} if found else {}

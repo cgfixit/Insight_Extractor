@@ -130,7 +130,13 @@ class PatternLabel(StrEnum):
 contains only `DYNAMIC_KEYWORD` matches. Static matching is case-insensitive in both
 `InsightExtractor.extract_regex_entities()` and `KeywordPatternRegistry.extract_all()`
 and preserves matched spelling. The registry retains its combined static + dynamic
-result contract. Disabling dynamic regex leaves static extraction available.
+result contract; `KeywordPatternRegistry.extract_dynamic()` returns the dynamic part alone
+and is what `extract_dynamic_entities()` calls, so static patterns run once per
+`extract()`. Disabling dynamic regex leaves static extraction available.
+
+`KeywordStats.top_keywords` reports `keyword_freq`: 1 when a keyword joins the bank, plus
+one per match of that keyword (stemmed forms included) in every `extract()` call, carried
+across runs by the state file.
 
 All models use Pydantic `BaseModel` v2 with `from __future__ import annotations`.
 
@@ -327,6 +333,13 @@ Same as the current enhanced file's `DynamicKeywordStemmer` and `KeywordPatternR
 - Use Pydantic models where appropriate
 - Import from `config.py`, `exceptions.py`, `constants.py`
 - Type aliases: `MatchResultList = list[MatchInfo]` (Pydantic)
+- `compile_keywords` orders alternatives longest first (caller order in `REGEX` mode), so a
+  keyword listed after its own prefix still matches (`trade deadline` vs `trade`)
+- `compile_keywords_incremental` is an alias of `compile_keywords`; the bank is always
+  compiled in one go, so a grown bank matches exactly like a freshly loaded one
+- `find_matches` credits a match to its keyword by exact lookup, then the match minus one
+  configured suffix (shortest first), then substring containment
+- `KeywordPatternRegistry.extract_dynamic(text)` runs only the dynamic keyword pattern
 
 ---
 
@@ -360,7 +373,8 @@ class InsightExtractor:
         Rank new_text's terms by TF-IDF, keep the top dynamic_expansion_top_n, drop
         candidates redundant with the bank, then add each candidate whose best cosine
         similarity to any bank keyword is >= similarity_threshold. If none qualifies,
-        add the single top-ranked unseen candidate.
+        add the single top-ranked unseen candidate, unless a bank keyword or phrase is
+        itself among the candidates (in-domain text adds nothing).
 
         The gate measures relatedness to the bank, not term quality: with the default
         multi-domain seeds, generic words clear 0.38 more easily than new domain terms.
@@ -372,6 +386,10 @@ class InsightExtractor:
         """Write extraction results to a Markdown file in the output directory."""
         ...
 ```
+
+A config file's values are validated before any is applied: `seed_keywords` must be a list
+of strings, `similarity_threshold` a finite number, `stem_mode` a `StemMode` value.
+Otherwise the constructor logs a warning and keeps its own arguments.
 
 The `save_results_to_markdown` method formats results as follows (live format since
 PR #15; every interpolated value passes through `_markdown_text`, which HTML-escapes it,
@@ -592,7 +610,7 @@ not download BERT weights. Required CI passing still does not imply a live-model
 
 ### test_stemmer.py
 - Test all StemMode pattern generation
-- Test stem variation generation
+- Test longest-keyword-first matching and stemmed-match attribution
 - Test compile_keywords with edge cases (empty, single, many)
 - Test find_matches with positions
 - Test add/remove keyword cache invalidation
