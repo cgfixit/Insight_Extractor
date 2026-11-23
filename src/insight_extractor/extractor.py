@@ -493,7 +493,7 @@ class InsightExtractor:
                 self.stem_mode = stem_mode
             except ConfigLoadError as exc:
                 logger.warning(
-                    "Failed to load config %s; using defaults: %s", self.config_path, exc
+                    "Ignoring config %s; keeping constructor settings: %s", self.config_path, exc
                 )
 
         self.keyword_freq: Counter[str] = Counter(self.thread_keywords)

@@ -414,7 +414,7 @@ def test_invalid_config_values_fall_back_to_defaults(
     assert extractor.thread_keywords == ["anchor"]
     assert extractor.similarity_threshold == 0.38
     assert extractor.stem_mode == StemMode.STEM
-    assert "using defaults" in caplog.text
+    assert "keeping constructor settings" in caplog.text
 
 
 def test_bad_config_format_raises(tmp_path: Path) -> None:
