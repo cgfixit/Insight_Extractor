@@ -280,9 +280,10 @@ produced `ModelLoadError: name 'init_empty_weights' is not defined` — the miss
   constraints set `transformers==4.53.0` + `accelerate==0.34.2` could not import together —
   `ImportError: cannot import name 'TorchTensorParallelPlugin' from 'accelerate.utils'`
   the moment anything imports `sentence_transformers` (so unit tests fail to collect).
-  transformers 4.53's trainer needs `accelerate>=1.3.0`. CI stays green only because
-  its jobs run `pip install -e ".[dev]"` **without** `-c constraints.txt` and resolve a
-  modern accelerate. `constraints.txt` now pins `accelerate==1.15.0`; if a
+  transformers 4.53's trainer needs `accelerate>=1.3.0`. CI stayed green then because
+  its jobs installed without `-c constraints.txt`; since issue #65 the type-check and
+  unit-test jobs install with it (smoke and integration stay unconstrained as the
+  upstream canary). `constraints.txt` now pins `accelerate==1.15.0`; if a
   constraints-based install ever hits this again, upgrade accelerate in the local env
   and flag it — changing the pin itself is an ask-first change (§6).
 - Any dependency change ⇒ update `docs/SECURITY_AUDIT.md` and re-check the README
@@ -309,8 +310,10 @@ integration* on this private repo is expected (no GitHub Advanced Security) — 
 ### 4.12 Config loading is two-faced
 
 **Rule:** `InsightExtractor._load_config()` raises `ConfigLoadError` on bad format or
-parse failure — but the constructor **catches it and silently falls back to defaults**
-(logs a warning), and silently ignores a `config_path` that doesn't exist. Don't write
+parse failure, and the constructor raises it too for invalid values (`seed_keywords` not a
+list of str, non-finite/non-numeric `similarity_threshold`, unknown `stem_mode`) — but the
+constructor **catches it and falls back to its own arguments** (logs a warning; nothing
+from the file is applied), and silently ignores a `config_path` that doesn't exist. Don't write
 tests expecting the constructor to raise on bad config; test `_load_config` directly for
 error paths (existing tests do exactly this). Supported formats: `.toml`, `.yaml`/
 `.yml`, `.json` — dict at top level or it raises.

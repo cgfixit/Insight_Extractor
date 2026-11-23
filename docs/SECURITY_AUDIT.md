@@ -220,7 +220,7 @@ The accelerate fix version was corrected in the 2026-10-17 update above.
 
 **File:** `src/insight_extractor/tokenizer.py:34` (bandit 1.9.4, 2026-11-14)  
 **CWE:** [CWE-494](https://cwe.mitre.org/data/definitions/494.html) — Download of Code Without Integrity Check  
-**Details:** `AutoTokenizer.from_pretrained(self.model_name)` is called without a pinned `revision=`. The model itself has the same gap: `SentenceTransformer(self.model_name)` (`extractor.py:556`) also omits a revision, though bandit only flags `from_pretrained`. If the Hub repo is compromised, a malicious update could be pulled.  
+**Details:** `AutoTokenizer.from_pretrained(self.model_name)` is called without a pinned `revision=`. The model itself has the same gap: `SentenceTransformer(self.model_name)` (`extractor.py:594`) also omits a revision, though bandit only flags `from_pretrained`. If the Hub repo is compromised, a malicious update could be pulled.  
 **Mitigation:** Pin both loads to a full commit SHA in production. A short or nonexistent
 revision raises `RevisionNotFoundError`. The example previously documented here,
 `revision="c9b44c9"`, does not exist on the Hub (404). The revision below is the
@@ -236,10 +236,25 @@ is an API change.
 
 ### B105 — Hardcoded password string (LOW / MEDIUM confidence) — false positive
 
-**File:** `src/insight_extractor/extractor.py:59` (first reported by bandit 1.9.4 on 2026-11-14)  
+**File:** `src/insight_extractor/extractor.py:67` (first reported by bandit 1.9.4 on 2026-11-14; line re-checked 2026-11-23)  
 **Details:** `_TFIDF_TOKEN_PATTERN = r"(?u)\b(?=\w*[^\W\d_])\w\w+\b"` is flagged because the
 name contains `TOKEN`. It is the scikit-learn `TfidfVectorizer` token regex, not a credential.  
 **Status:** False positive; no change.
+
+### Quadratic regex backtracking on crafted input (ReDoS) — fixed 2026-11-23
+
+Found by the ponytail audit (issue #65, findings 1 and 2); not reported by bandit.
+**CWE:** [CWE-1333](https://cwe.mitre.org/data/definitions/1333.html) — Inefficient Regular Expression Complexity
+
+| Location | Trigger | Before | After |
+|---|---|---|---|
+| `constants.py` `PORT_NUMBER` | `port` + 50,000 newlines | 14 s (quadratic: two adjacent `\s*`) | <1 ms (possessive `\s*+`, same matches) |
+| `utils.split_sentences` | 50 KB of `"e.g. "` | 13 s (each abbreviation join rescanned the whole piece) | 0.05 s (only the last 16 chars are checked) |
+
+**Reachability:** both run on every `extract()` input, which is untrusted text (pastes,
+leak-site posts, scraped reports). A 1 MB crafted input previously stalled one run for
+hours. **Status:** fixed; unit tests pin both with linear-time budgets. bandit 1.9.4 re-run
+on 2026-11-23 reports only B615 and B105 above.
 
 ---
 
