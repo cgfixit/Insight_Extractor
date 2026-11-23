@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import json
 import logging
+import math
 import os
 import re
 import tempfile
@@ -42,6 +43,13 @@ from insight_extractor.tokenizer import SentenceTokenizer
 from insight_extractor.utils import compute_text_hash, format_timestamp, split_sentences
 
 logger = logging.getLogger("insight_extractor")
+
+# A relative str resolves in output_dir but a relative Path from the CWD; the old bare
+# "use Path instead" sent state elsewhere, and the next load_state() started fresh.
+_STR_PATH_DEPRECATION = (
+    "Passing a string path is deprecated; pass extractor.output_dir / 'name.json' to keep "
+    "the same file (a relative Path resolves from the current directory, not output_dir)."
+)
 
 _MARKDOWN_SPECIAL = re.compile(r"[\\`*_{}\[\]()#+\-.!|>~]")
 
@@ -470,17 +478,27 @@ class InsightExtractor:
 
         # ---- config file ---------------------------------------------------
         if self.config_path and self.config_path.exists():
+            # Values are checked before any is applied: seed_keywords = "ransomware" became
+            # ten one-letter keywords, and an unknown stem_mode crashed the constructor.
             try:
                 cfg = self._load_config(self.config_path)
-                if isinstance(cfg, dict):
-                    if "seed_keywords" in cfg:
-                        self.thread_keywords = list(cfg["seed_keywords"])
-                    if "similarity_threshold" in cfg:
-                        self.similarity_threshold = float(cfg["similarity_threshold"])
-                    if "stem_mode" in cfg:
-                        self.stem_mode = StemMode(cfg["stem_mode"])
-            except ConfigLoadError:
-                logger.warning("Failed to load config; using defaults.")
+                keywords = cfg.get("seed_keywords", self.thread_keywords)
+                if not isinstance(keywords, list) or not all(isinstance(k, str) for k in keywords):
+                    raise ConfigLoadError("seed_keywords must be a list of strings")
+                try:
+                    threshold = float(cfg.get("similarity_threshold", self.similarity_threshold))
+                    stem_mode = StemMode(cfg.get("stem_mode", self.stem_mode))
+                except (TypeError, ValueError) as exc:
+                    raise ConfigLoadError(f"invalid config value: {exc}") from exc
+                if not math.isfinite(threshold):
+                    raise ConfigLoadError("similarity_threshold must be finite")
+                self.thread_keywords = list(keywords)
+                self.similarity_threshold = threshold
+                self.stem_mode = stem_mode
+            except ConfigLoadError as exc:
+                logger.warning(
+                    "Failed to load config %s; using defaults: %s", self.config_path, exc
+                )
 
         self.keyword_freq = Counter(self.thread_keywords)
         self._reset_keyword_runtime()
@@ -696,7 +714,8 @@ class InsightExtractor:
         """
         Use *new_text* as the TF-IDF corpus and add semantically close keywords,
         or one top-ranked unseen candidate when no semantic candidate qualifies.
-        Candidates redundant with the bank (see _drop_redundant_candidates) are skipped.
+        Candidates redundant with the bank (see _drop_redundant_candidates) are skipped;
+        a bank keyword or phrase among the candidates also skips that fallback.
         """
         if not auto_expand:
             return []
@@ -736,7 +755,15 @@ class InsightExtractor:
         # TF-IDF lowercases candidates; compare case-insensitively so "esxi" does not
         # duplicate an existing "ESXi" seed.
         known = {" ".join(kw.casefold().split()) for kw in self.thread_keywords}
-        candidates = _drop_redundant_candidates(candidates, known)
+        # A tracked keyword among the top terms marks the text as in-domain and skips the
+        # fallback (da9061c). Checked before redundant phrases are dropped, so a known
+        # phrase counts like a known word; known terms are never re-encoded.
+        known_in_text = any(cand.casefold() in known for cand in candidates)
+        candidates = [
+            cand
+            for cand in _drop_redundant_candidates(candidates, known)
+            if cand.casefold() not in known
+        ]
 
         if not candidates:
             return []
@@ -777,7 +804,7 @@ class InsightExtractor:
         max_sims = similarities.max(axis=1)
 
         newly_added = []
-        semantic_candidate_qualified = False
+        semantic_candidate_qualified = known_in_text
         for cand, sim in zip(candidates, max_sims, strict=False):
             if sim >= self.similarity_threshold:
                 semantic_candidate_qualified = True
@@ -1152,11 +1179,7 @@ class InsightExtractor:
     def save_state(self, path: str | Path = "insight_extractor_state.json") -> None:
         """Persist keyword bank, frequencies, and categories to JSON."""
         if isinstance(path, str):
-            warnings.warn(
-                "Passing a string path is deprecated; use Path instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
+            warnings.warn(_STR_PATH_DEPRECATION, DeprecationWarning, stacklevel=2)
         p = (
             self.output_dir / path
             if isinstance(path, str) and not Path(path).is_absolute()
@@ -1190,11 +1213,7 @@ class InsightExtractor:
     def load_state(self, path: str | Path = "insight_extractor_state.json") -> bool:
         """Restore JSON state lazily, or raise StateLoadError without changing runtime."""
         if isinstance(path, str):
-            warnings.warn(
-                "Passing a string path is deprecated; use Path instead.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
+            warnings.warn(_STR_PATH_DEPRECATION, DeprecationWarning, stacklevel=2)
         p = (
             self.output_dir / path
             if isinstance(path, str) and not Path(path).is_absolute()

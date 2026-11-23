@@ -389,12 +389,53 @@ def test_config_loads_supported_formats(tmp_path: Path) -> None:
     assert "jsonkw" in InsightExtractor(config_path=json_file).thread_keywords
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        'seed_keywords = "ransomware"\n',
+        "seed_keywords = [1, 2]\n",
+        'stem_mode = "stemm"\n',
+        'similarity_threshold = "high"\n',
+        "similarity_threshold = nan\n",
+        'seed_keywords = ["kept_out"]\nstem_mode = "stemm"\n',
+    ],
+)
+def test_invalid_config_values_fall_back_to_defaults(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture, body: str
+) -> None:
+    config_file = tmp_path / "config.toml"
+    config_file.write_text(body, encoding="utf-8")
+
+    with caplog.at_level("WARNING", logger="insight_extractor"):
+        extractor = InsightExtractor(
+            seed_keywords=["anchor"], config_path=config_file, output_dir=tmp_path
+        )
+
+    assert extractor.thread_keywords == ["anchor"]
+    assert extractor.similarity_threshold == 0.38
+    assert extractor.stem_mode == StemMode.STEM
+    assert "using defaults" in caplog.text
+
+
 def test_bad_config_format_raises(tmp_path: Path) -> None:
     config_file = tmp_path / "config.ini"
     config_file.write_text("seed_keywords=bad")
 
     with pytest.raises(ConfigLoadError):
         InsightExtractor._load_config(config_file)
+
+
+def test_str_path_warning_names_the_path_that_keeps_the_same_file(tmp_path: Path) -> None:
+    extractor = InsightExtractor(seed_keywords=["anchor"], output_dir=tmp_path)
+
+    with pytest.warns(DeprecationWarning, match=r"output_dir / 'name\.json'") as caught:
+        extractor.save_state("state.json")
+    extractor.save_state(extractor.output_dir / "state.json")
+
+    assert len(caught) == 1
+    assert json.loads((tmp_path / "state.json").read_text(encoding="utf-8"))["thread_keywords"] == [
+        "anchor"
+    ]
 
 
 def test_state_roundtrip_and_bad_state(tmp_path: Path) -> None:
@@ -683,6 +724,34 @@ def test_keyword_expansion_skips_fallback_when_a_known_candidate_qualifies(
 
     assert extractor.update_thread_keywords(text) == []
     assert extractor.thread_keywords == ["anchor", "known"]
+
+
+class BankOnlyModel:
+    """Bank terms get their own axes; every other string is orthogonal to the bank."""
+
+    def encode(
+        self,
+        texts: str | list[str],
+        *_args: Any,
+        **_kwargs: Any,
+    ) -> np.ndarray[Any, np.dtype[np.float64]]:
+        items = [texts] if isinstance(texts, str) else texts
+        axes = {"anchor": [1.0, 0.0, 0.0], "known phrase": [0.0, 1.0, 0.0]}
+        return np.array([axes.get(item, [0.0, 0.0, 1.0]) for item in items], dtype=np.float64)
+
+
+def test_keyword_expansion_skips_fallback_when_a_known_phrase_is_a_candidate(
+    tmp_path: Path,
+) -> None:
+    new_domain = "mycorrhizal mycorrhizal fungal ecology nutrient exchange"
+
+    def expand(text: str) -> list[str]:
+        extractor = InsightExtractor(seed_keywords=["anchor", "known phrase"], output_dir=tmp_path)
+        extractor._model = BankOnlyModel()
+        return extractor.update_thread_keywords(text)
+
+    assert expand(new_domain) == ["mycorrhizal"]
+    assert expand(("known phrase " * 10) + new_domain) == []
 
 
 def test_keyword_expansion_ignores_urls_numbers_and_hashes(tmp_path: Path) -> None:
