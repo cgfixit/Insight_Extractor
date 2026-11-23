@@ -95,15 +95,6 @@ class TestGeneratePattern:
         assert pat == raw
 
 
-class TestGenerateStemVariations:
-    """Stem variation generation."""
-
-    def test_generate_stem_variations(self, stemmer: DynamicKeywordStemmer) -> None:
-        vars_ = stemmer.generate_stem_variations("attack")
-        assert "attack" in vars_
-        assert len(vars_) > 1
-
-
 class TestCompileKeywords:
     """Compiling keywords into a regex pattern via set_keywords."""
 
@@ -371,6 +362,20 @@ class TestMultiWordWhitespace:
         assert isinstance(stemmer.compiled_pattern, ChunkedKeywordPattern)
         text = "\n".join(kw.replace(" ", "\t", 1) for kw in kws)
         assert {m.keyword for m in stemmer.find_matches(text)} == set(kws)
+
+    def test_extract_dynamic_skips_static_patterns(self) -> None:
+        registry = KeywordPatternRegistry(
+            static_patterns={"CVE_ID": r"CVE-\d{4}-\d+"}, stemmer=DynamicKeywordStemmer()
+        )
+        registry.regenerate_dynamic_patterns(["ransomware"])
+        text = "Ransomware abused CVE-2026-1234; ransomware again."
+
+        assert registry.extract_dynamic(text) == {"DYNAMIC_KEYWORD": ["Ransomware", "ransomware"]}
+        assert registry.extract_all(text) == {
+            "CVE_ID": ["CVE-2026-1234"],
+            "DYNAMIC_KEYWORD": ["Ransomware", "ransomware"],
+        }
+        assert KeywordPatternRegistry(stemmer=DynamicKeywordStemmer()).extract_dynamic(text) == {}
 
     def test_extract_all_reports_wrapped_match_once_with_single_spaces(
         self, registry_with_stemmer: KeywordPatternRegistry

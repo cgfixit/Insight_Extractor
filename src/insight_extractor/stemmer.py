@@ -5,14 +5,10 @@ import re
 from collections import defaultdict
 from collections.abc import Iterator
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING
 
 from insight_extractor.config import PatternLabel, StemMode
 from insight_extractor.exceptions import PatternCompileError
 from insight_extractor.models import MatchInfo
-
-if TYPE_CHECKING:
-    pass
 
 logger: logging.Logger = logging.getLogger(__name__)
 
@@ -108,7 +104,6 @@ class DynamicKeywordStemmer:
         # Internal caches -- invalidated on keyword changes
         self._keywords: KeywordList = []
         self._compiled_master: KeywordPattern | None = None
-        self._compiled_typed: TypedPatternDict | None = None
         self._keyword_lookup: dict[str, str] | None = None
         self._last_updated: datetime | None = None
 
@@ -168,51 +163,6 @@ class DynamicKeywordStemmer:
             case _:
                 # Fallback for unexpected mode values
                 return rf"\b{escaped}\b"
-
-    def generate_stem_variations(self, keyword: str) -> KeywordList:
-        """Generate stemmed variations of a keyword for broader matching.
-
-        Detects the root by stripping known suffixes, then expands with all
-        configured suffixes.
-
-        Parameters
-        ----------
-        keyword:
-            Source keyword.
-
-        Returns
-        -------
-        list[str]
-            List of variations (always includes the original keyword).
-
-        Examples
-        --------
-        >>> stemmer = DynamicKeywordStemmer()
-        >>> stemmer.generate_stem_variations("ransomware")
-        ['ransomware', 'ransomwares']
-        """
-        variations = [keyword]
-        keyword_lower = keyword.lower()
-
-        # Strip trailing suffixes to find the root
-        root = keyword_lower
-        stripped = False
-        for suffix in sorted(self.custom_suffixes, key=len, reverse=True):
-            if root.endswith(suffix) and len(root) > len(suffix) + 2:
-                root = root[: -len(suffix)]
-                stripped = True
-                break
-
-        if stripped:
-            variations.append(keyword_lower)
-        else:
-            # Add suffixed variations
-            for suffix in self.custom_suffixes:
-                candidate = keyword_lower + suffix
-                if candidate not in variations:
-                    variations.append(candidate)
-
-        return variations
 
     # -- Compilation ----------------------------------------------------------
 
@@ -381,7 +331,6 @@ class DynamicKeywordStemmer:
     def _invalidate_caches(self) -> None:
         """Clear compiled pattern caches after keyword mutations."""
         self._compiled_master = None
-        self._compiled_typed = None
         self._keyword_lookup = None
         self._last_updated = datetime.now(UTC)
 
@@ -625,13 +574,29 @@ class KeywordPatternRegistry:
                         results[label].append(m_str)
                         seen.add(m_str)
 
-        # Dynamic keyword patterns
-        if self._compiled_dynamic is not None:
-            seen_dynamic: set[str] = set()
-            for match in self._compiled_dynamic.finditer(text):
-                m_str = _normalize_whitespace(match.group(0))
-                if m_str not in seen_dynamic:
-                    results[PatternLabel.DYNAMIC_KEYWORD].append(m_str)
-                    seen_dynamic.add(m_str)
-
+        results.update(self.extract_dynamic(text))
         return dict(results)
+
+    def extract_dynamic(self, text: str) -> EntityResults:
+        """Run only the dynamic keyword pattern.
+
+        Whitespace runs are collapsed to one space before deduplication, so a
+        keyword wrapped across lines is reported once, as it reads in prose.
+
+        Parameters
+        ----------
+        text:
+            Input text to search.
+
+        Returns
+        -------
+        dict[str, list[str]]
+            ``{"DYNAMIC_KEYWORD": [...]}`` in first-seen order, or ``{}`` when
+            nothing matched or no dynamic pattern is compiled.
+        """
+        if self._compiled_dynamic is None:
+            return {}
+        found = dict.fromkeys(
+            _normalize_whitespace(match.group(0)) for match in self._compiled_dynamic.finditer(text)
+        )
+        return {PatternLabel.DYNAMIC_KEYWORD: list(found)} if found else {}

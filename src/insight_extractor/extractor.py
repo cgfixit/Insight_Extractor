@@ -23,7 +23,7 @@ from sentence_transformers import SentenceTransformer
 from sklearn.feature_extraction.text import TfidfVectorizer  # type: ignore[import-untyped]
 from sklearn.metrics.pairwise import cosine_similarity  # type: ignore[import-untyped]
 
-from insight_extractor.config import KeywordCategory, PatternLabel, StemMode
+from insight_extractor.config import KeywordCategory, StemMode
 from insight_extractor.constants import REGEX_PATTERNS, THREAD_SEEDS
 from insight_extractor.exceptions import (
     ConfigLoadError,
@@ -469,11 +469,7 @@ class InsightExtractor:
         self._unit_embeddings: dict[str, npt.NDArray[np.float64]] | None = None
 
         # ---- keyword bank --------------------------------------------------
-        self.thread_keywords: list[str] = list(seed_keywords) if seed_keywords else []
-        if not self.thread_keywords and hasattr(THREAD_SEEDS, "__iter__"):
-            self.thread_keywords = list(THREAD_SEEDS)
-
-        self.keyword_freq: Counter[str] = Counter(self.thread_keywords)
+        self.thread_keywords: list[str] = list(seed_keywords or THREAD_SEEDS)
         self.keyword_categories: CategoryMap = {}
 
         # ---- config file ---------------------------------------------------
@@ -500,7 +496,7 @@ class InsightExtractor:
                     "Failed to load config %s; using defaults: %s", self.config_path, exc
                 )
 
-        self.keyword_freq = Counter(self.thread_keywords)
+        self.keyword_freq: Counter[str] = Counter(self.thread_keywords)
         self._reset_keyword_runtime()
 
         # ---- tokenizer + model placeholders --------------------------------
@@ -868,11 +864,8 @@ class InsightExtractor:
         """Return only DYNAMIC_KEYWORD matches when dynamic regex is enabled."""
         if not self.enable_dynamic_regex:
             return {}
-        return {
-            label: matches
-            for label, matches in self.pattern_registry.extract_all(text).items()
-            if label == PatternLabel.DYNAMIC_KEYWORD
-        }
+        # extract_all() also reran every static pattern that extract() had just run.
+        return self.pattern_registry.extract_dynamic(text)
 
     # ------------------------------------------------------------------
     # Semantic keyword extraction
@@ -975,36 +968,19 @@ class InsightExtractor:
     # Keyword positions
     # ------------------------------------------------------------------
     def extract_keywords_with_positions(self, text: str) -> list[dict[str, Any]]:
-        """Use the stemmer's compiled pattern to find all keyword matches with positions."""
-        pattern = self.stemmer.compiled_pattern
-        if pattern is None:
-            return []
-
-        results: list[dict[str, Any]] = []
-        seen_spans: set[tuple[int, int]] = set()
-
-        for match in pattern.finditer(text):
-            start = match.start()
-            end = match.end()
-            if (start, end) in seen_spans:
-                continue
-            seen_spans.add((start, end))
-
-            matched_text = match.group(0)
-            keyword = self.stemmer._resolve_source_keyword(matched_text) or matched_text
-
-            category = self.keyword_categories.get(keyword, KeywordCategory.GENERAL)
-            results.append(
-                {
-                    "keyword": keyword,
-                    "match": matched_text,
-                    "start": start,
-                    "end": end,
-                    "category": category.value,
-                }
-            )
-
-        return results
+        """Return stemmer.find_matches() results as dicts with each keyword's category."""
+        return [
+            {
+                "keyword": match.keyword,
+                "match": match.match,
+                "start": match.start,
+                "end": match.end,
+                "category": self.keyword_categories.get(
+                    match.keyword, KeywordCategory.GENERAL
+                ).value,
+            }
+            for match in self.stemmer.find_matches(text)
+        ]
 
     # ------------------------------------------------------------------
     # Keyword statistics
