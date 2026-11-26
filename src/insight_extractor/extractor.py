@@ -21,7 +21,6 @@ import numpy as np
 import numpy.typing as npt
 from sentence_transformers import SentenceTransformer
 from sklearn.feature_extraction.text import TfidfVectorizer  # type: ignore[import-untyped]
-from sklearn.metrics.pairwise import cosine_similarity  # type: ignore[import-untyped]
 
 from insight_extractor.config import KeywordCategory, StemMode
 from insight_extractor.constants import REGEX_PATTERNS, THREAD_SEEDS
@@ -764,10 +763,6 @@ class InsightExtractor:
         if not candidates:
             return []
 
-        # Ensure embeddings are fresh
-        if self._keyword_embeddings is None and self.thread_keywords:
-            self._recompute_keyword_embeddings()
-
         # If we have no existing keywords, add top candidates verbatim
         if not self.thread_keywords:
             newly_added: list[str] = []
@@ -785,6 +780,11 @@ class InsightExtractor:
                 self._auto_categorize_keywords()
             return newly_added
 
+        if self._keyword_embeddings is None:
+            self._recompute_keyword_embeddings()
+        keyword_embeddings = self._keyword_embeddings
+        assert keyword_embeddings is not None  # The bank is nonempty.
+
         # Embed candidates and compare against existing keyword embeddings
         cand_embeddings = self.model.encode(
             candidates,
@@ -795,8 +795,8 @@ class InsightExtractor:
         cand_norms[cand_norms == 0] = 1.0
         cand_embeddings = cand_embeddings / cand_norms
 
-        # Max similarity for each candidate against all existing keywords
-        similarities = cosine_similarity(cand_embeddings, self._keyword_embeddings)
+        # Both embedding matrices are already L2-normalized.
+        similarities = cand_embeddings @ keyword_embeddings.T
         max_sims = similarities.max(axis=1)
 
         newly_added = []
@@ -902,7 +902,7 @@ class InsightExtractor:
             return []
 
         chunk_embeddings = self._encode_units(chunks)
-        similarities = cosine_similarity(chunk_embeddings, self._keyword_embeddings)
+        similarities = chunk_embeddings @ self._keyword_embeddings.T
         # similarities shape: (n_chunks, n_keywords)
 
         hits: list[SemanticHit] = []
@@ -952,7 +952,7 @@ class InsightExtractor:
             return []
 
         sent_embeddings = self._encode_units(raw_sentences)
-        similarities = cosine_similarity(sent_embeddings, self._keyword_embeddings)
+        similarities = sent_embeddings @ self._keyword_embeddings.T
         max_scores = similarities.max(axis=1)
 
         scored: list[tuple[str, float]] = [

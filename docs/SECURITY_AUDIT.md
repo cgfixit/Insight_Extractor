@@ -241,20 +241,21 @@ is an API change.
 name contains `TOKEN`. It is the scikit-learn `TfidfVectorizer` token regex, not a credential.  
 **Status:** False positive; no change.
 
-### Quadratic regex backtracking on crafted input (ReDoS) — fixed 2026-11-23
+### Quadratic processing of untrusted text — issue #65
 
 Found by the ponytail audit (issue #65, findings 1 and 2); not reported by bandit.
-**CWE:** [CWE-1333](https://cwe.mitre.org/data/definitions/1333.html) — Inefficient Regular Expression Complexity
+**CWE:** [CWE-1333](https://cwe.mitre.org/data/definitions/1333.html) for the port regex.
 
 | Location | Trigger | Before | After |
 |---|---|---|---|
 | `constants.py` `PORT_NUMBER` | `port` + 50,000 newlines | 14 s (quadratic: two adjacent `\s*`) | <1 ms (possessive `\s*+`, same matches) |
-| `utils.split_sentences` | 50 KB of `"e.g. "` | 13 s (each abbreviation join rescanned the whole piece) | 0.05 s (only the last 16 chars are checked) |
+| `utils.split_sentences` | 800 KB of repeated abbreviations | 1.62 s after #66 (each join still copied the growing sentence) | 0.08 s (one join per sentence) |
+| `utils.split_sentences` | 92 KB of Markdown rows with repeated table delimiters | 1.29 s after #66 (repeated scans over the same pipe rows) | 0.005 s (one pass over the rows) |
 
 **Reachability:** both run on every `extract()` input, which is untrusted text (pastes,
-leak-site posts, scraped reports). A 1 MB crafted input previously stalled one run for
-hours. **Status:** fixed; unit tests pin both with linear-time budgets. bandit 1.9.4 re-run
-on 2026-11-23 reports only B615 and B105 above.
+leak-site posts, scraped reports). Unit tests exercise the port regex and long
+abbreviation runs with bounded time budgets. The splitter timings are local medians
+of three runs on Python 3.12.14. Bandit 1.9.4 reported only B615 and B105 on 2026-11-23.
 
 ---
 

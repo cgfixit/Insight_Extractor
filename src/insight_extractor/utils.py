@@ -18,18 +18,17 @@ _TABLE_RULE = re.compile(r"\|?\s*:?-+:?\s*(?:\|\s*:?-+:?\s*)+\|?")
 _BLOCK_START = re.compile(r"[-*+]\s|\d{1,3}[.)]\s|>")
 # A punctuation split must not end on a list ordinal ("> 4.") or a common abbreviation;
 # "U.S. government" otherwise became the top-ranked fragment "government and ...".
+_LIST_ORDINAL = re.compile(r"(?:[>#*+-] *)*\d{1,3}\.")
 # Titles are case-sensitive so "every 500 ms. The operator ..." still splits.
 _NO_BREAK_AFTER = re.compile(
-    r"^(?:[>#*+-]\s*)*\d{1,3}\.$"
-    r"|(?<![\w.])(?:vs|e\.g|i\.e|cf|approx)\.$"
+    r"(?<![\w.])(?:vs|e\.g|i\.e|cf|approx)\.$"
     r"|(?<![\w.])(?-i:Mrs?|Ms|Dr|St|Fig)\.$",
     re.IGNORECASE,
 )
 # "U.S."/"U.K." often end a sentence, so they join only a lowercase continuation.
 _COUNTRY_ABBREVIATION = re.compile(r"(?<![\w.])U\.[SK]\.$")
-# Covers the longest abbreviation ("approx." plus its one-char lookbehind) and short
-# marked ordinals such as "> - 123."; a longer all-marker piece no longer joins.
-_BREAK_CHECK_TAIL = 16
+# "approx." is the longest suffix to check.
+_ABBREVIATION_TAIL = 7
 _FRAME_CHARS = " \t|│┃║"
 
 
@@ -61,15 +60,17 @@ def sanitize_filename(name: str) -> str:
 def _table_row_indexes(lines: list[str]) -> set[int]:
     """Indexes of the header and body rows around each pipe-table delimiter row."""
     rows: set[int] = set()
+    in_table = False
     for i, line in enumerate(lines):
-        if not _TABLE_RULE.fullmatch(line):
+        if "|" not in line:
+            in_table = False
             continue
-        if i and "|" in lines[i - 1]:
-            rows.add(i - 1)
-        j = i + 1
-        while j < len(lines) and "|" in lines[j]:
-            rows.add(j)
-            j += 1
+        if in_table:
+            rows.add(i)
+        if _TABLE_RULE.fullmatch(line):
+            if i and "|" in lines[i - 1]:
+                rows.add(i - 1)
+            in_table = True
     return rows
 
 
@@ -87,20 +88,22 @@ def split_sentences(text: str) -> list[str]:
 
     def flush() -> None:
         if paragraph:
-            pieces: list[str] = []
+            fragments: list[str] = []
             for piece in _SENTENCE_END.split(" ".join(paragraph)):
-                # Both patterns end in $ and the ^-anchored ordinal branch only fits short
-                # pieces, so the tail decides. Rescanning every joined piece made 50 KB of
-                # "e.g. " take 13 s (quadratic).
-                tail = max(0, len(pieces[-1]) - _BREAK_CHECK_TAIL) if pieces else 0
-                if pieces and (
-                    _NO_BREAK_AFTER.search(pieces[-1], tail)
-                    or (_COUNTRY_ABBREVIATION.search(pieces[-1], tail) and piece[:1].islower())
-                ):
-                    pieces[-1] = f"{pieces[-1]} {piece}"
-                elif piece:
-                    pieces.append(piece)
-            units.extend(pieces)
+                if fragments:
+                    previous = fragments[-1]
+                    tail = max(0, len(previous) - _ABBREVIATION_TAIL)
+                    if (
+                        _NO_BREAK_AFTER.search(previous, tail)
+                        or (_COUNTRY_ABBREVIATION.search(previous, tail) and piece[:1].islower())
+                        or (len(fragments) == 1 and _LIST_ORDINAL.fullmatch(previous))
+                    ):
+                        fragments.append(piece)
+                        continue
+                    units.append(" ".join(fragments))
+                fragments = [piece] if piece else []
+            if fragments:
+                units.append(" ".join(fragments))
             paragraph.clear()
 
     lines = [" ".join(line.split()) for line in text.splitlines()]
