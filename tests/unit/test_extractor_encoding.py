@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
 
 from insight_extractor.extractor import InsightExtractor
 
@@ -73,3 +74,39 @@ def test_extract_encodes_each_sentence_unit_once(tmp_path: Path) -> None:
     assert extractor._unit_embeddings is None
     standalone = extractor.extract_key_sentences(text, top_n=extractor.top_k)
     assert result.key_sentences == standalone
+
+
+def test_normalized_float32_scores_preserve_rank_threshold_and_zero_rows(tmp_path: Path) -> None:
+    high = "The quasar produced a significant amount of light."
+    low = "The source produced a relatively weak signal."
+    zero = "No meaningful signal was detected in this region."
+    vectors = {
+        "anchor": [3.0, 0.0],
+        "quasar": [4.0, 3.0],
+        "noise": [0.0, 0.0],
+        high: [4.0, 3.0],
+        low: [3.0, 4.0],
+        zero: [0.0, 0.0],
+    }
+
+    class Float32Model:
+        def encode(self, texts: list[str], **_kwargs: Any) -> np.ndarray[Any, np.dtype[np.float32]]:
+            return np.array([vectors.get(text, [0.0, 0.0]) for text in texts], dtype=np.float32)
+
+    extractor = InsightExtractor(
+        seed_keywords=["anchor", "zero vector"], similarity_threshold=0.75, output_dir=tmp_path
+    )
+    extractor._model = Float32Model()
+    extractor._tokenizer = SentenceSplitTokenizer()
+    result = extractor.extract(f"{low} {zero} {high}", update_keywords=False)
+
+    expected = cosine_similarity(
+        np.array([vectors[sentence] for sentence in (high, low, zero)], dtype=np.float32),
+        np.array([vectors["anchor"]], dtype=np.float32),
+    )
+    assert [(hit.keyword, hit.context, hit.score) for hit in result.semantic_keywords] == [
+        ("anchor", high, round(float(expected[0, 0]), 6))
+    ]
+    assert [hit.sentence for hit in result.key_sentences] == [high, low, zero]
+    np.testing.assert_allclose([hit.score for hit in result.key_sentences], expected[:, 0])
+    assert extractor.update_thread_keywords("quasar quasar noise noise") == ["quasar"]

@@ -253,11 +253,40 @@ class TestSplitSentences:
             "The group later expanded via St. Louis.",
         ]
 
+    def test_marked_ordinal_joins_only_at_start_of_sentence(self) -> None:
+        text = "> > > > > > > > 4. Continued prose. For example, e.g. 5. Next sentence."
+        assert split_sentences(text) == [
+            "> > > > > > > > 4. Continued prose.",
+            "For example, e.g. 5.",
+            "Next sentence.",
+        ]
+
+    def test_repeated_table_delimiters_keep_rows_atomic_until_the_table_ends(self) -> None:
+        text = (
+            "Prose ends here. On the next line:\n"
+            "Question? | Answer\n"
+            "--- | ---\n"
+            "First? | Yes. It applies.\n"
+            "--- | ---\n"
+            "Second? | No. It varies.\n"
+            "\n"
+            "Run command | filter. Then read the result."
+        )
+        assert split_sentences(text) == [
+            "Prose ends here.",
+            "On the next line:",
+            "Question? | Answer",
+            "First? | Yes. It applies.",
+            "Second? | No. It varies.",
+            "Run command | filter.",
+            "Then read the result.",
+        ]
+
     def test_long_abbreviation_runs_split_in_linear_time(self) -> None:
-        text = "e.g. " * 10000 + "vs. " * 5000 + "U.S. and " * 5000
+        text = "e.g. " * 200_000 + "vs. " * 40_000 + "U.S. and " * 40_000
         started = time.perf_counter()
         units = split_sentences(text)
 
-        # Generous budget: tail-only checks take ~0.05 s here, whole-piece rescans ~60 s.
+        # Copying the accumulated sentence at each join exceeds this budget.
         assert time.perf_counter() - started < 3.0
-        assert units == [" ".join(text.split())]
+        assert units == [text.rstrip()]
